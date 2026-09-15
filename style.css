@@ -1,0 +1,1412 @@
+:root {
+    --preto-fundo: #000000;
+    --preto-menu: #050505;
+    --card-bg: #121212;
+    --verde-neon: #39FF14;
+    --branco: #ffffff;
+    --cinza-texto: #888888;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+body {
+    background-color: var(--preto-fundo);
+    color: var(--branco);
+    overflow-x: hidden;
+}
+
+/* Cabeçalho */
+header {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    height: 60px;
+    background-color: var(--preto-fundo);
+    /* Imagem de fundo (chamas verdes). Coloque o arquivo header-bg.png na pasta e descomente a linha abaixo: */
+    background-image: url('header-bg.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 15px;
+    border-bottom: 2px solid var(--verde-neon);
+    box-shadow: 0 0 15px rgba(57, 255, 20, 0.25);
+    z-index: 100;
+}
+
+.btn-menu {
+    background: none;
+    border: none;
+    color: var(--verde-neon);
+    font-size: 28px;
+    cursor: pointer;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logo-img {
+    width: 135px;
+    height: 38px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 6px rgba(57, 255, 20, 0.5));
+}
+
+/* Botão de Perfil no Topo Direito */
+.btn-profile {
+    background: none;
+    border: 2px solid var(--verde-neon);
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+    transition: transform 0.2s;
+}
+
+.btn-profile:active {
+    transform: scale(0.92);
+}
+
+.profile-avatar-icon {
+    font-size: 20px;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #1a1a1a;
+}
+
+.profile-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Menu Lateral Personalizado */
+#menu-lateral {
+    position: fixed;
+    top: 0;
+    left: -280px;
+    width: 280px;
+    height: 100vh;
+    background-color: var(--preto-menu);
+    border-right: 2px solid var(--verde-neon);
+    box-shadow: 5px 0 20px rgba(57, 255, 20, 0.15);
+    transition: left 0.3s ease;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+}
+
+.menu-header {
+    height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid rgba(57, 255, 20, 0.3);
+    background: linear-gradient(to bottom, rgba(57, 255, 20, 0.05), transparent);
+}
+
+.menu-logo-img {
+    width: 160px;
+    height: 160px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 10px rgba(57, 255, 20, 0.6));
+}
+
+.menu-links {
+    list-style: none;
+    padding: 15px 0;
+}
+
+.menu-links li a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 25px;
+    color: var(--verde-neon);
+    text-decoration: none;
+    font-size: 13px;
+    transition: background 0.2s, color 0.2s, padding-left 0.2s;
+    cursor: pointer;
+    opacity: 0.9;
+}
+
+.menu-links li a:active,
+.menu-links li a:hover {
+    background-color: rgba(57, 255, 20, 0.12);
+    color: var(--verde-neon);
+    opacity: 1;
+    border-left: 4px solid var(--verde-neon);
+    padding-left: 29px;
+}
+
+/* Overlay Geral e Modal Overlay */
+#overlay,
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.8);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease;
+    z-index: 150;
+}
+
+.modal-overlay {
+    z-index: 250;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 70px 10px 10px 10px;
+}
+
+.modal-overlay.ativo {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal-content {
+    background-color: var(--preto-menu);
+    border: 2px solid var(--verde-neon);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 320px;
+    padding: 20px;
+    box-shadow: 0 0 25px rgba(57, 255, 20, 0.3);
+    position: relative;
+    animation: slideDown 0.25s ease;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--verde-neon);
+    font-size: 16px;
+    cursor: pointer;
+}
+
+/* Formulários do Modal / Perfil */
+.modal-titulo {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--verde-neon);
+    font-size: 14px;
+    margin-bottom: 15px;
+    text-align: center;
+    text-shadow: 0 0 5px rgba(57, 255, 20, 0.4);
+}
+
+.form-group {
+    margin-bottom: 12px;
+    position: relative;
+}
+
+.form-group label {
+    display: block;
+    font-size: 10px;
+    color: var(--cinza-texto);
+    margin-bottom: 4px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 10px;
+    background-color: var(--card-bg);
+    border: 1px solid rgba(57, 255, 20, 0.3);
+    border-radius: 5px;
+    color: var(--branco);
+    font-size: 11px;
+    outline: none;
+}
+
+.form-input:focus {
+    border-color: var(--verde-neon);
+    box-shadow: 0 0 6px rgba(57, 255, 20, 0.2);
+}
+
+.btn-toggle-pass {
+    position: absolute;
+    right: 10px;
+    top: 26px;
+    background: none;
+    border: none;
+    color: var(--verde-neon);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.btn-submit {
+    width: 100%;
+    padding: 10px;
+    background-color: var(--verde-neon);
+    color: var(--preto-fundo);
+    border: none;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 11px;
+    cursor: pointer;
+    margin-top: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.4);
+}
+
+.btn-google {
+    width: 100%;
+    padding: 10px;
+    background-color: #ffffff;
+    color: #000000;
+    border: none;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 11px;
+    cursor: pointer;
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+.modal-link-troca {
+    text-align: center;
+    font-size: 10px;
+    color: var(--cinza-texto);
+    margin-top: 12px;
+}
+
+.modal-link-troca span {
+    color: var(--verde-neon);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.erro-msg {
+    color: #ff4444;
+    font-size: 9px;
+    margin-top: 4px;
+    display: none;
+}
+
+.sucesso-msg {
+    color: var(--verde-neon);
+    font-size: 9px;
+    margin-top: 4px;
+    display: none;
+}
+
+/* Perfil Logado no Modal */
+.user-profile-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+}
+
+.user-big-avatar {
+    width: 65px;
+    height: 65px;
+    border-radius: 50%;
+    border: 2px solid var(--verde-neon);
+    overflow: hidden;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+}
+
+.user-big-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.file-input-label {
+    display: inline-block;
+    background: transparent;
+    border: 1px dashed var(--verde-neon);
+    color: var(--verde-neon);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 8.5px;
+    cursor: pointer;
+    margin-top: 3px;
+}
+
+.file-input-hidden {
+    display: none;
+}
+
+/* Área de Conteúdo */
+main {
+    padding: 75px 10px 30px;
+}
+
+.view {
+    display: none;
+}
+
+.view.ativo {
+    display: block;
+}
+
+.titulo-secao {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--verde-neon);
+    font-size: 14px;
+    margin: 18px 0 10px 0;
+    text-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+    border-left: 3px solid var(--verde-neon);
+    padding-left: 8px;
+}
+
+/* Barra de Pesquisa e Resultados Automáticos */
+.search-container {
+    position: relative;
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+.search-box {
+    width: 100%;
+    padding: 10px 12px;
+    background-color: var(--card-bg);
+    border: 1px solid rgba(57, 255, 20, 0.3);
+    border-radius: 6px;
+    color: var(--branco);
+    font-size: 12px;
+    outline: none;
+    transition: border 0.3s, box-shadow 0.3s;
+}
+
+.search-box:focus {
+    border-color: var(--verde-neon);
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.25);
+}
+
+.search-results {
+    position: absolute;
+    top: 42px;
+    left: 0;
+    width: 100%;
+    background-color: var(--preto-menu);
+    border: 1px solid var(--verde-neon);
+    border-radius: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 50;
+    display: none;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.9);
+}
+
+.search-result-item {
+    padding: 10px 12px;
+    font-size: 11px;
+    color: var(--branco);
+    border-bottom: 1px solid rgba(57, 255, 20, 0.1);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.search-result-item:hover {
+    background-color: rgba(57, 255, 20, 0.15);
+    color: var(--verde-neon);
+}
+
+/* =========================================================
+   CARROSSEL DE DESTAQUES - NOVA ESTRUTURA (scroll-snap)
+   ========================================================= */
+
+.carousel-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+#carouselSlider {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px;
+    border: 1px solid rgba(57, 255, 20, 0.4);
+    box-shadow: 0 0 10px rgba(57, 255, 20, 0.15);
+    height: 180px;
+    background-color: var(--card-bg);
+    gap: 0;
+}
+
+#carouselSlider::-webkit-scrollbar {
+    display: none;
+}
+
+.carousel-slide {
+    min-width: 100%;
+    width: 100%;
+    height: 100%;
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 12px 14px 28px 14px;
+    /* Enquanto não houver capa real: usa a mesma imagem do cabeçalho */
+    background:
+        linear-gradient(
+            to top,
+            rgba(0, 0, 0, 0.92) 0%,
+            rgba(0, 0, 0, 0.55) 45%,
+            rgba(0, 0, 0, 0.25) 100%
+        ),
+        url('header-bg.png') center / cover no-repeat,
+        #181818;
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.carousel-info h3 {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--verde-neon);
+    font-size: 13px;
+    margin-bottom: 3px;
+    text-shadow: 0 0 5px rgba(57, 255, 20, 0.5);
+}
+
+.carousel-info p {
+    font-size: 10px;
+    color: var(--cinza-texto);
+    margin-bottom: 8px;
+}
+
+.carousel-botoes {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-ler {
+    background-color: var(--verde-neon);
+    color: var(--preto-fundo);
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: bold;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.btn-desc {
+    background-color: transparent;
+    color: var(--verde-neon);
+    border: 1px solid var(--verde-neon);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: bold;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+#carouselDots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+/* Selo NEW + tempo de lançamento */
+.badge-new {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: linear-gradient(135deg, #39FF14, #00cc66);
+    color: #000;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 8px;
+    font-weight: 900;
+    padding: 3px 7px;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.6);
+    z-index: 5;
+    line-height: 1.1;
+    letter-spacing: 0.5px;
+}
+
+.badge-new .badge-new-label {
+    font-size: 9px;
+}
+
+.badge-new .badge-new-time {
+    font-size: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    opacity: 0.9;
+}
+
+.badge-new.hidden {
+    display: none;
+}
+
+/* --- CARROSSEL HORIZONTAL --- */
+.horizontal-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+}
+
+.horizontal-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* --- RANKING DE LEITORES --- */
+.ranking-card {
+    min-width: 82px;
+    max-width: 82px;
+    background-color: var(--card-bg);
+    border: 1px solid rgba(57, 255, 20, 0.25);
+    border-radius: 6px;
+    padding: 8px 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    position: relative;
+    flex-shrink: 0;
+    box-shadow: 0 0 5px rgba(57, 255, 20, 0.05);
+}
+
+.ranking-posicao {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    background: var(--verde-neon);
+    color: var(--preto-fundo);
+    font-size: 6.5px;
+    font-weight: bold;
+    padding: 1px 3px;
+    border-radius: 3px;
+    z-index: 2;
+}
+
+.ranking-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: #1a1a1a;
+    border: 1px solid var(--verde-neon);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--verde-neon);
+    font-weight: bold;
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.ranking-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ranking-nick {
+    font-size: 8px;
+    color: var(--branco);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+    font-weight: bold;
+}
+
+.ranking-obras {
+    font-size: 6.5px;
+    color: var(--cinza-texto);
+    text-align: center;
+}
+
+/* --- GRID VERTICAL DE LANÇAMENTOS --- */
+.manhwa-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+/* --- PADRÃO DE CARTAZ --- */
+.manhwa-card {
+    background-color: var(--card-bg);
+    border: 1px solid rgba(57, 255, 20, 0.2);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.horizontal-scroll .manhwa-card {
+    min-width: 105px;
+    max-width: 105px;
+    flex-shrink: 0;
+}
+
+.manhwa-card:active {
+    transform: scale(0.96);
+    border-color: var(--verde-neon);
+}
+
+.manhwa-capa {
+    width: 100%;
+    height: 110px;
+    background-color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--verde-neon);
+    font-size: 9px;
+    font-weight: bold;
+    border-bottom: 1px solid rgba(57, 255, 20, 0.2);
+    position: relative;
+}
+
+.badge-views {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.8);
+    color: var(--verde-neon);
+    font-size: 7px;
+    padding: 2px 3px;
+    border: 1px solid var(--verde-neon);
+    border-radius: 3px;
+}
+
+.manhwa-info {
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex-grow: 1;
+}
+
+.manhwa-titulo {
+    font-size: 9px;
+    font-weight: bold;
+    color: var(--branco);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ultimos-caps {
+    border-top: 1px dashed rgba(57, 255, 20, 0.2);
+    padding-top: 3px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cap-linha {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 7.5px;
+}
+
+.cap-numero {
+    color: var(--branco);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.cap-data {
+    color: var(--verde-neon);
+    opacity: 0.9;
+    font-size: 7px;
+}
+
+.ver-mais-card {
+    min-width: 90px;
+    max-width: 90px;
+    background-color: var(--card-bg);
+    border: 1px dashed var(--verde-neon);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: pointer;
+    color: var(--verde-neon);
+    font-size: 10px;
+    font-weight: bold;
+    padding: 10px;
+    flex-shrink: 0;
+    transition: background 0.2s;
+}
+
+.ver-mais-card:active {
+    background-color: rgba(57, 255, 20, 0.1);
+}
+
+.conteudo-placeholder {
+    background-color: var(--card-bg);
+    padding: 25px;
+    border-radius: 8px;
+    border: 1px solid rgba(57, 255, 20, 0.2);
+    text-align: center;
+    font-size: 12px;
+    color: var(--cinza-texto);
+}
+
+/* =========================================================
+   TELA DE DETALHES DA OBRA (Sinopse + Gêneros + Capítulos)
+   ========================================================= */
+
+.btn-voltar {
+    background: none;
+    border: 1px solid var(--verde-neon);
+    color: var(--verde-neon);
+    padding: 6px 12px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    margin-bottom: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.2s;
+}
+
+.btn-voltar:active {
+    background: rgba(57, 255, 20, 0.15);
+}
+
+.obra-hero {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+    align-items: flex-start;
+}
+
+.obra-capa-grande {
+    width: 110px;
+    min-width: 110px;
+    height: 155px;
+    background-color: #1a1a1a;
+    border: 1px solid rgba(57, 255, 20, 0.35);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--verde-neon);
+    font-size: 10px;
+    font-weight: bold;
+    overflow: hidden;
+    box-shadow: 0 0 12px rgba(57, 255, 20, 0.15);
+}
+
+.obra-capa-grande img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.obra-info-topo {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.obra-titulo {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--verde-neon);
+    font-size: 15px;
+    line-height: 1.25;
+    text-shadow: 0 0 6px rgba(57, 255, 20, 0.35);
+}
+
+.obra-meta {
+    font-size: 10px;
+    color: var(--cinza-texto);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.obra-meta span:first-child {
+    color: var(--verde-neon);
+}
+
+.obra-generos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 4px;
+}
+
+.genero-tag {
+    background: rgba(57, 255, 20, 0.1);
+    border: 1px solid rgba(57, 255, 20, 0.4);
+    color: var(--verde-neon);
+    font-size: 8px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-weight: bold;
+    letter-spacing: 0.3px;
+}
+
+.obra-sinopse {
+    background-color: var(--card-bg);
+    border: 1px solid rgba(57, 255, 20, 0.2);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 11px;
+    line-height: 1.55;
+    color: #cccccc;
+    margin-bottom: 14px;
+}
+
+.obra-botoes-acao {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.btn-ler-agora {
+    flex: 1;
+    background-color: var(--verde-neon);
+    color: var(--preto-fundo);
+    border: none;
+    padding: 11px;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: 0 0 10px rgba(57, 255, 20, 0.4);
+}
+
+.btn-ler-agora:active {
+    transform: scale(0.97);
+}
+
+.btn-favoritar {
+    background: transparent;
+    border: 1px solid var(--verde-neon);
+    color: var(--verde-neon);
+    padding: 11px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+}
+
+.btn-favoritar.favoritado {
+    background: rgba(57, 255, 20, 0.15);
+}
+
+.btn-favoritar:active {
+    transform: scale(0.97);
+}
+
+/* Lista de Capítulos */
+.capitulos-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 20px;
+}
+
+.capitulo-item {
+    background-color: var(--card-bg);
+    border: 1px solid rgba(57, 255, 20, 0.18);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.capitulo-item:active {
+    border-color: var(--verde-neon);
+    background: rgba(57, 255, 20, 0.08);
+}
+
+.capitulo-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.capitulo-numero {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--branco);
+}
+
+.capitulo-titulo {
+    font-size: 9px;
+    color: var(--cinza-texto);
+}
+
+.capitulo-direita {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+}
+
+.capitulo-data {
+    font-size: 9px;
+    color: var(--verde-neon);
+}
+
+.capitulo-novo {
+    background: linear-gradient(135deg, #39FF14, #00cc66);
+    color: #000;
+    font-size: 7px;
+    font-weight: 900;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: 'Orbitron', sans-serif;
+}
+
+.capitulo-lido {
+    opacity: 0.55;
+}
+
+.capitulo-lido .capitulo-numero {
+    color: var(--cinza-texto);
+}
+
+
+/* =========================================================
+   LOADING OVERLAY (imagem em tela cheia + barra no centro)
+   ========================================================= */
+#loadingOverlay {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+#loadingOverlay.ativo {
+    display: flex;
+}
+
+/* Imagem ocupa a tela inteira */
+.loading-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    z-index: 1;
+}
+
+/* Conteúdo central (barra + texto) por cima da imagem */
+.loading-centro {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 12px;
+    border: 1px solid rgba(57, 255, 20, 0.25);
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+}
+
+.loading-barra {
+    width: 160px;
+    height: 5px;
+    background: rgba(26, 26, 26, 0.9);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(57, 255, 20, 0.4);
+}
+
+.loading-barra-inner {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #39FF14, #00cc66);
+    border-radius: 4px;
+    animation: loadBar 1.3s ease forwards;
+}
+
+@keyframes loadBar {
+    from { width: 0%; }
+    to { width: 100%; }
+}
+
+.loading-texto {
+    font-size: 11px;
+    color: var(--verde-neon);
+    font-family: 'Orbitron', sans-serif;
+    letter-spacing: 2px;
+    text-shadow: 0 0 8px rgba(57, 255, 20, 0.5);
+    min-width: 130px;
+    text-align: center;
+}
+
+/* =========================================================
+   CAPAS (imagem real + fallback)
+   ========================================================= */
+.manhwa-capa img,
+.obra-capa-grande img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.capa-fallback {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    padding: 10px;
+    opacity: 0.7;
+}
+
+/* =========================================================
+   FILTRO DE GÊNEROS
+   ========================================================= */
+.filtro-generos {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    margin-bottom: 8px;
+    scrollbar-width: none;
+}
+
+.filtro-generos::-webkit-scrollbar { display: none; }
+
+.filtro-chip {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid rgba(57, 255, 20, 0.35);
+    color: var(--cinza-texto);
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filtro-chip.ativo {
+    background: rgba(57, 255, 20, 0.15);
+    border-color: var(--verde-neon);
+    color: var(--verde-neon);
+}
+
+/* =========================================================
+   CONTINUAR LENDO / HISTÓRICO
+   ========================================================= */
+.progresso-barra-wrap {
+    margin-top: 4px;
+    height: 3px;
+    background: #1a1a1a;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progresso-barra {
+    height: 100%;
+    background: var(--verde-neon);
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+
+.obra-progresso-texto {
+    font-size: 9px;
+    color: var(--cinza-texto);
+    margin-top: 6px;
+}
+
+/* =========================================================
+   LEITOR DE CAPÍTULOS
+   ========================================================= */
+#view-leitor {
+    padding-bottom: 40px;
+}
+
+.leitor-header {
+    position: sticky;
+    top: 0;
+    background: rgba(0,0,0,0.92);
+    border-bottom: 1px solid rgba(57, 255, 20, 0.3);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 50;
+    margin: -10px -10px 12px -10px;
+}
+
+.leitor-titulo {
+    flex: 1;
+    font-size: 11px;
+    color: var(--verde-neon);
+    font-family: 'Orbitron', sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.leitor-paginas {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+}
+
+.leitor-pagina {
+    width: 100%;
+    max-width: 420px;
+    background: #111;
+    border: 1px solid rgba(57, 255, 20, 0.15);
+    border-radius: 4px;
+    min-height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--cinza-texto);
+    font-size: 12px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 20px;
+}
+
+.leitor-pagina img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.leitor-nav {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    position: sticky;
+    bottom: 10px;
+}
+
+.leitor-nav button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.btn-cap-anterior {
+    background: transparent;
+    border: 1px solid var(--verde-neon);
+    color: var(--verde-neon);
+}
+
+.btn-cap-proximo {
+    background: var(--verde-neon);
+    border: none;
+    color: #000;
+}
+
+.secao-continuar {
+    margin-bottom: 8px;
+}
+
+
+/* Capítulo marcado como lido */
+.capitulo-item.capitulo-lido {
+    opacity: 0.55;
+}
+.capitulo-item.capitulo-lido .capitulo-numero {
+    color: var(--cinza-texto);
+}
+.badge-lido {
+    font-size: 7px;
+    color: var(--cinza-texto);
+    border: 1px solid rgba(136,136,136,0.5);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.btn-marcar-lido {
+    background: transparent;
+    border: 1px solid rgba(57, 255, 20, 0.4);
+    color: var(--verde-neon);
+    font-size: 9px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+}
+.btn-marcar-lido:active {
+    background: rgba(57, 255, 20, 0.12);
+}
+
+.leitor-pagina.erro-pagina {
+    min-height: 120px;
+    color: var(--cinza-texto);
+    font-size: 11px;
+}
+
+/* =========================================================
+   PAINEL ADM + SUPORTE
+   ========================================================= */
+.adm-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    margin-bottom: 14px;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+}
+.adm-tabs::-webkit-scrollbar { display: none; }
+
+.adm-tab {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid rgba(57, 255, 20, 0.3);
+    color: var(--cinza-texto);
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+}
+.adm-tab.ativo {
+    background: rgba(57, 255, 20, 0.15);
+    border-color: var(--verde-neon);
+    color: var(--verde-neon);
+}
+
+.adm-panel { display: none; }
+.adm-panel.ativo { display: block; }
+
+.adm-subtitulo {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--verde-neon);
+    font-size: 12px;
+    margin: 8px 0 12px;
+}
+
+.adm-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.adm-item {
+    background: var(--card-bg);
+    border: 1px solid rgba(57, 255, 20, 0.2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 11px;
+}
+
+.adm-item-titulo {
+    color: var(--branco);
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.adm-item-meta {
+    color: var(--cinza-texto);
+    font-size: 9px;
+    margin-bottom: 6px;
+}
+
+.adm-item-acoes {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.adm-item-acoes button {
+    background: transparent;
+    border: 1px solid rgba(57, 255, 20, 0.4);
+    color: var(--verde-neon);
+    font-size: 9px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.adm-item-acoes button.perigo {
+    border-color: #ff4444;
+    color: #ff4444;
+}
+
+textarea.form-input {
+    font-family: 'JetBrains Mono', monospace;
+}
