@@ -2006,12 +2006,12 @@ function urlCapa(titulo) {
 }
 
 function htmlCapa(titulo, classeExtra = '') {
-    // Se a obra foi cadastrada no Painel ADM com capa, usa ela
+    // Prioridade: URL do Firestore → capas/slug.png no GitHub → logo-capa.png
     const obra = (typeof dadosObras !== 'undefined' && (dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo)));
-    if (obra && obra.capaData) {
-        return `<img src="${obra.capaData}" alt="${titulo}" class="${classeExtra}">`;
+    if (obra && (obra.capaURL || obra.capaData) && String(obra.capaURL || obra.capaData).startsWith('http')) {
+        return `<img src="${obra.capaURL || obra.capaData}" alt="${titulo}" class="${classeExtra}" onerror="this.onerror=null; this.src='logo-capa.png'; this.classList.add('capa-fallback');">`;
     }
-    // img real em capas/slug.png com onerror → logo-capa.png
+    // Caminho local no GitHub Pages: capas/solo-leveling.png
     return `<img src="${urlCapa(titulo)}" alt="${titulo}" class="${classeExtra}" onerror="this.onerror=null; this.src='logo-capa.png'; this.classList.add('capa-fallback');">`;
 }
 
@@ -2407,25 +2407,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 /* =========================================================
-   PAINEL ADM + SUPORTE — FIREBASE (Firestore + Storage)
+   PAINEL ADM + SUPORTE — Firestore (dados) + GitHub (imagens)
    =========================================================
-   Estrutura:
-     Firestore: obras/{slug}
-     Storage:   caps/{slug}/capa.jpg
-                caps/{slug}/{numCap}/01.jpg, 02.jpg...
-     Firestore: tickets/{id}
-     users:     campo isAdmin (opcional)
+   SEM Firebase Storage.
+   Capas:     capas/{slug}.png
+   Capítulos: caps/{slug}/{numero}/01.png, 02.png, ...
+   Dados:     Firestore obras/{slug}
 */
 
 const EMAILS_ADMIN = [
-    // Quando quiser restringir, coloque seu e-mail:
     // 'seu-email@gmail.com'
 ];
 
 const CHAVE_ADMINS_EXTRA = 'manhwaToons_admins_extra';
 
 function isAdminUser() {
-    if (!EMAILS_ADMIN.length) return true; // modo dev: todos veem
+    if (!EMAILS_ADMIN.length) return true;
     const extra = JSON.parse(localStorage.getItem(CHAVE_ADMINS_EXTRA) || '[]');
     const permitidos = [...EMAILS_ADMIN, ...extra];
     if (!usuarioAtualData || !usuarioAtualData.email) return false;
@@ -2439,7 +2436,6 @@ function atualizarVisibilidadeMenuAdm() {
     item.style.display = isAdminUser() ? '' : 'none';
 }
 
-/* ---------- Carregar obras do Firestore e mesclar ---------- */
 async function carregarObrasFirestore() {
     try {
         const snap = await getDocs(collection(db, 'obras'));
@@ -2454,18 +2450,70 @@ async function carregarObrasFirestore() {
                     sinopse: data.sinopse || '',
                     capitulos: data.capitulos || [],
                     capaURL: data.capaURL || null,
-                    capaData: data.capaURL || null, // reutiliza no htmlCapa
-                    _firebaseSlug: docSnap.id // marca que essa obra existe de verdade no Firestore (pode ser apagada)
+                    capaData: data.capaURL || null,
+                    atualizadoEm: data.atualizadoEm || 0,
+                    _firebaseSlug: docSnap.id
                 };
             }
         });
-        console.log('[ADM] Obras carregadas do Firestore:', snap.size);
+        console.log('[ADM] Obras Firestore:', snap.size);
+        renderizarLancamentos();
     } catch (e) {
-        console.warn('[ADM] Erro ao carregar obras:', e.message);
+        console.warn('[ADM] Erro obras:', e.message);
     }
 }
 
-/* ---------- Abas ---------- */
+/* ----- Lançamentos dinâmicos (mais recentes primeiro) ----- */
+window.renderizarLancamentos = function() {
+    const grid = document.getElementById('lancamentosGrid');
+    if (!grid) return;
+
+    const obras = obterTodasObras().slice();
+    // ordena por atualizadoEm desc; exemplos sem data ficam no fim
+    obras.sort((a, b) => {
+        const da = (dadosObras[a.titulo] && dadosObras[a.titulo].atualizadoEm) || 0;
+        const db_ = (dadosObras[b.titulo] && dadosObras[b.titulo].atualizadoEm) || 0;
+        return db_ - da;
+    });
+
+    if (!obras.length) {
+        grid.innerHTML = `<div class="conteudo-placeholder" style="grid-column:1/-1;font-size:11px;">Nenhuma obra ainda. Cadastre no Painel ADM.</div>`;
+        return;
+    }
+
+    grid.innerHTML = '';
+    obras.forEach(o => {
+        const full = dadosObras[o.titulo] || o;
+        const caps = full.capitulos || [];
+        const ordenados = [...caps].sort((a, b) => b.num - a.num);
+        const c1 = ordenados[0];
+        const c2 = ordenados[1];
+        const card = document.createElement('div');
+        card.className = 'manhwa-card';
+        card.onclick = () => abrirObra(o.titulo);
+        let capsHtml = '';
+        if (c1) {
+            capsHtml += `<div class="cap-linha"><span class="cap-numero">Cap. ${c1.num}</span><span class="cap-data">${c1.data || 'Novo'}</span></div>`;
+        } else {
+            capsHtml += `<div class="cap-linha"><span class="cap-numero">0 capítulos</span><span class="cap-data">Nova</span></div>`;
+        }
+        if (c2) {
+            capsHtml += `<div class="cap-linha"><span class="cap-numero">Cap. ${c2.num}</span><span class="cap-data">${c2.data || '-'}</span></div>`;
+        }
+        card.innerHTML = `
+            <div class="manhwa-capa">
+                ${htmlCapa(o.titulo)}
+                <span class="badge-views">👁️ ${o.views || '0'}</span>
+            </div>
+            <div class="manhwa-info">
+                <div class="manhwa-titulo">${o.titulo}</div>
+                <div class="ultimos-caps">${capsHtml}</div>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+};
+
 window.admTab = function(nome) {
     document.querySelectorAll('.adm-tab').forEach(t => t.classList.remove('ativo'));
     document.querySelectorAll('.adm-panel').forEach(p => p.classList.remove('ativo'));
@@ -2474,33 +2522,41 @@ window.admTab = function(nome) {
     if (btn) btn.classList.add('ativo');
     if (panel) panel.classList.add('ativo');
     if (nome === 'obras') admRenderListaObras();
-    if (nome === 'capitulos') admPopularSelectObras();
+    if (nome === 'capitulos') {
+        admPopularSelectObras();
+        atualizarHintCapitulo();
+    }
     if (nome === 'tickets') admRenderTickets();
     if (nome === 'usuarios') admRenderUsuarios();
 };
 
-function fileToDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result);
-        r.onerror = reject;
-        r.readAsDataURL(file);
-    });
+function atualizarHintObra() {
+    const titulo = (document.getElementById('admObraTitulo') || {}).value || 'nome-da-obra';
+    const el = document.getElementById('admObraCapaPath');
+    if (el) el.textContent = `capas/${slugify(titulo.trim() || 'nome-da-obra')}.png`;
 }
 
-async function uploadArquivoStorage(caminho, file) {
-    const storageRef = ref(storage, caminho);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+function atualizarHintCapitulo() {
+    const titulo = (document.getElementById('admCapObra') || {}).value || 'nome-da-obra';
+    const num = (document.getElementById('admCapNumero') || {}).value || 'NUMERO';
+    const el = document.getElementById('admCapPathHint');
+    if (el) el.textContent = `caps/${slugify(titulo)}/${num}/01.png, 02.png, 03.png...`;
 }
 
-/* ---------- Salvar obra (Firestore + capa no Storage) ---------- */
+document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'admObraTitulo') atualizarHintObra();
+    if (e.target && (e.target.id === 'admCapNumero' || e.target.id === 'admCapObra')) atualizarHintCapitulo();
+});
+document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'admCapObra') atualizarHintCapitulo();
+});
+
+/* ----- Salvar obra (só Firestore + caminho GitHub) ----- */
 window.admSalvarObra = async function() {
     const titulo = document.getElementById('admObraTitulo').value.trim();
     const status = document.getElementById('admObraStatus').value;
     const generosStr = document.getElementById('admObraGeneros').value.trim();
     const sinopse = document.getElementById('admObraSinopse').value.trim();
-    const capaInput = document.getElementById('admObraCapa');
     const msg = document.getElementById('admObraMsg');
     const err = document.getElementById('admObraErro');
     msg.style.display = 'none';
@@ -2516,23 +2572,16 @@ window.admSalvarObra = async function() {
     const slug = slugify(titulo);
 
     try {
-        msg.textContent = 'Salvando no Firebase...';
+        msg.textContent = 'Salvando no Firestore...';
         msg.style.display = 'block';
 
-        // capa
-        let capaURL = null;
-        if (capaInput.files && capaInput.files[0]) {
-            const ext = (capaInput.files[0].name.split('.').pop() || 'jpg').toLowerCase();
-            capaURL = await uploadArquivoStorage(`caps/${slug}/capa.${ext}`, capaInput.files[0]);
-        } else if (dadosObras[titulo] && dadosObras[titulo].capaURL) {
-            capaURL = dadosObras[titulo].capaURL;
-        }
-
-        // capítulos já existentes (se editar)
         let capitulos = [];
         if (dadosObras[titulo] && Array.isArray(dadosObras[titulo].capitulos)) {
             capitulos = dadosObras[titulo].capitulos;
         }
+
+        // capaURL aponta para o arquivo no próprio site (GitHub Pages)
+        const capaURL = `capas/${slug}.png`;
 
         const obraData = {
             titulo,
@@ -2541,27 +2590,28 @@ window.admSalvarObra = async function() {
             generos: generos.length ? generos : ['Outros'],
             sinopse,
             views: (dadosObras[titulo] && dadosObras[titulo].views) || '0',
-            capaURL: capaURL || null,
+            capaURL,
             capitulos,
             atualizadoEm: Date.now()
         };
 
         await setDoc(doc(db, 'obras', slug), obraData, { merge: true });
 
-        // atualiza memória local
         dadosObras[titulo] = {
             ...obraData,
             capaData: capaURL,
             _firebaseSlug: slug
         };
 
-        msg.textContent = 'Obra salva no Firebase com sucesso!';
+        msg.innerHTML = `Obra salva!<br>Agora no GitHub suba a capa em:<br><code style="color:#39FF14">capas/${slug}.png</code>`;
+        msg.style.display = 'block';
         document.getElementById('admObraTitulo').value = '';
         document.getElementById('admObraSinopse').value = '';
         document.getElementById('admObraGeneros').value = '';
-        capaInput.value = '';
+        atualizarHintObra();
         admRenderListaObras();
         admPopularSelectObras();
+        renderizarLancamentos();
     } catch (e) {
         console.error(e);
         err.textContent = 'Erro ao salvar: ' + (e.message || e);
@@ -2578,68 +2628,69 @@ window.admRenderListaObras = async function() {
         await carregarObrasFirestore();
         const todas = obterTodasObras();
         if (!todas.length) {
-            box.innerHTML = '<div class="conteudo-placeholder">Nenhuma obra no Firebase ainda.</div>';
+            box.innerHTML = '<div class="conteudo-placeholder">Nenhuma obra ainda.</div>';
             return;
         }
         box.innerHTML = todas.map(o => {
-            const tituloEscapado = String(o.titulo).replace(/'/g, "\\'");
-            const btnExcluir = o._firebaseSlug
-                ? `<button class="perigo" onclick="admApagarObra('${o._firebaseSlug}', '${tituloEscapado}')">Excluir</button>`
-                : `<span style="font-size:9px;color:var(--cinza-texto);" title="Obra de exemplo fixa no código — não vem do Firebase">exemplo</span>`;
+            const full = dadosObras[o.titulo] || {};
+            const tituloEsc = String(o.titulo).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const slug = full._firebaseSlug || slugify(o.titulo);
+            const isFb = !!full._firebaseSlug;
+            const btnExcluir = isFb
+                ? `<button class="perigo" onclick="admApagarObra('${slug}', '${tituloEsc}')">Excluir</button>`
+                : `<button class="perigo" onclick="admOcultarExemplo('${tituloEsc}')">Ocultar exemplo</button>`;
             return `
             <div class="adm-item">
                 <div class="adm-item-titulo">${o.titulo}</div>
-                <div class="adm-item-meta">${o.status} · ${o.views} · ${(o.generos||[]).join(', ')}</div>
+                <div class="adm-item-meta">${o.status} · capa: capas/${slug}.png · ${(o.generos||[]).join(', ')}</div>
                 <div class="adm-item-acoes">
-                    <button onclick="abrirObra('${tituloEscapado}')">Ver</button>
+                    <button onclick="abrirObra('${tituloEsc}')">Ver</button>
                     ${btnExcluir}
                 </div>
-            </div>
-        `;
+            </div>`;
         }).join('');
     } catch (e) {
         box.innerHTML = `<div class="conteudo-placeholder">Erro: ${e.message}</div>`;
     }
 };
 
-/* ---------- Apagar obra (Firestore + memória local) ---------- */
 window.admApagarObra = async function(slug, titulo) {
-    if (!confirm(`Excluir "${titulo}" definitivamente? Isso apaga a obra e a lista de capítulos do Firebase (as imagens enviadas ao Storage não são apagadas automaticamente).`)) {
-        return;
-    }
+    if (!confirm(`Excluir "${titulo}" do Firebase? (As imagens no GitHub você apaga manualmente se quiser.)`)) return;
     try {
         await deleteDoc(doc(db, 'obras', slug));
         delete dadosObras[titulo];
         admRenderListaObras();
         admPopularSelectObras();
+        renderizarLancamentos();
         renderizarContinuarLendo();
     } catch (e) {
-        alert('Erro ao excluir: ' + (e.message || e));
+        alert('Erro: ' + (e.message || e));
     }
 };
 
-/* ---------- Capítulos ---------- */
+window.admOcultarExemplo = function(titulo) {
+    delete dadosObras[titulo];
+    // remove também da lista de pesquisa se existir
+    const idx = listaObrasCompleta.findIndex(o => o.titulo === titulo);
+    if (idx >= 0) listaObrasCompleta.splice(idx, 1);
+    admRenderListaObras();
+    renderizarLancamentos();
+};
+
 window.admPopularSelectObras = function() {
     const sel = document.getElementById('admCapObra');
     if (!sel) return;
     const obras = obterTodasObras();
     sel.innerHTML = obras.map(o => `<option value="${o.titulo}">${o.titulo}</option>`).join('')
         || '<option value="">Nenhuma obra — cadastre uma primeiro</option>';
+    atualizarHintCapitulo();
 };
 
-document.addEventListener('change', (e) => {
-    if (e.target && e.target.id === 'admCapPaginas') {
-        const n = e.target.files ? e.target.files.length : 0;
-        const prev = document.getElementById('admCapPreview');
-        if (prev) prev.textContent = n ? `${n} imagem(ns) selecionada(s)` : '';
-    }
-});
-
+/* ----- Salvar capítulo (só metadados; imagens no GitHub) ----- */
 window.admSalvarCapitulo = async function() {
     const titulo = document.getElementById('admCapObra').value;
     const num = parseInt(document.getElementById('admCapNumero').value, 10);
     const capTitulo = document.getElementById('admCapTitulo').value.trim() || `Capítulo ${num}`;
-    const files = document.getElementById('admCapPaginas').files;
     const msg = document.getElementById('admCapMsg');
     const err = document.getElementById('admCapErro');
     msg.style.display = 'none';
@@ -2654,31 +2705,32 @@ window.admSalvarCapitulo = async function() {
     const slug = slugify(titulo);
 
     try {
-        msg.textContent = 'Enviando imagens para o Firebase...';
+        msg.textContent = 'Salvando capítulo no Firestore...';
         msg.style.display = 'block';
 
-        const paginasURLs = [];
-        if (files && files.length) {
-            // ordena por nome do arquivo
-            const lista = Array.from(files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-            for (let i = 0; i < lista.length; i++) {
-                const pag = String(i + 1).padStart(2, '0');
-                const ext = (lista[i].name.split('.').pop() || 'jpg').toLowerCase();
-                const url = await uploadArquivoStorage(`caps/${slug}/${num}/${pag}.${ext}`, lista[i]);
-                paginasURLs.push(url);
-                msg.textContent = `Enviando... ${i + 1}/${lista.length}`;
-            }
-        }
-
-        // lê obra atual do Firestore
         const refObra = doc(db, 'obras', slug);
         const snap = await getDoc(refObra);
         let obraData = snap.exists() ? snap.data() : (dadosObras[titulo] ? { ...dadosObras[titulo], slug } : null);
-        if (!obraData) {
-            err.textContent = 'Obra não encontrada no Firebase. Cadastre a obra antes.';
-            err.style.display = 'block';
-            msg.style.display = 'none';
-            return;
+        if (!obraData || !snap.exists()) {
+            // se só existe como exemplo local, cria no Firestore
+            if (dadosObras[titulo]) {
+                obraData = {
+                    titulo,
+                    slug,
+                    status: dadosObras[titulo].status || 'Ativo',
+                    generos: dadosObras[titulo].generos || ['Outros'],
+                    sinopse: dadosObras[titulo].sinopse || '',
+                    views: dadosObras[titulo].views || '0',
+                    capaURL: `capas/${slug}.png`,
+                    capitulos: dadosObras[titulo].capitulos || [],
+                    atualizadoEm: Date.now()
+                };
+            } else {
+                err.textContent = 'Cadastre a obra primeiro na aba Obras.';
+                err.style.display = 'block';
+                msg.style.display = 'none';
+                return;
+            }
         }
 
         if (!Array.isArray(obraData.capitulos)) obraData.capitulos = [];
@@ -2686,8 +2738,8 @@ window.admSalvarCapitulo = async function() {
             num,
             titulo: capTitulo,
             data: 'Hoje',
-            novo: true,
-            paginasURLs: paginasURLs.length ? paginasURLs : (obraData.capitulos.find(c => c.num === num) || {}).paginasURLs || []
+            novo: true
+            // páginas vêm de caps/{slug}/{num}/01.png no GitHub
         };
         const idx = obraData.capitulos.findIndex(c => c.num === num);
         if (idx >= 0) obraData.capitulos[idx] = { ...obraData.capitulos[idx], ...entry };
@@ -2704,24 +2756,128 @@ window.admSalvarCapitulo = async function() {
             generos: obraData.generos || [],
             sinopse: obraData.sinopse || '',
             capitulos: obraData.capitulos,
-            capaURL: obraData.capaURL || null,
-            capaData: obraData.capaURL || null
+            capaURL: obraData.capaURL || `capas/${slug}.png`,
+            capaData: obraData.capaURL || `capas/${slug}.png`,
+            atualizadoEm: obraData.atualizadoEm,
+            _firebaseSlug: slug
         };
 
-        msg.textContent = `Capítulo ${num} salvo no Firebase${paginasURLs.length ? ` com ${paginasURLs.length} página(s)` : ''}!`;
+        msg.innerHTML = `Capítulo ${num} salvo!<br>Suba as páginas no GitHub em:<br><code style="color:#39FF14">caps/${slug}/${num}/01.png</code><br><code style="color:#39FF14">caps/${slug}/${num}/02.png</code><br>...`;
+        msg.style.display = 'block';
         document.getElementById('admCapNumero').value = '';
         document.getElementById('admCapTitulo').value = '';
-        document.getElementById('admCapPaginas').value = '';
-        document.getElementById('admCapPreview').textContent = '';
+        atualizarHintCapitulo();
+        renderizarLancamentos();
     } catch (e) {
         console.error(e);
-        err.textContent = 'Erro ao salvar capítulo: ' + (e.message || e);
+        err.textContent = 'Erro: ' + (e.message || e);
         err.style.display = 'block';
         msg.style.display = 'none';
     }
 };
 
-/* ---------- Tickets (Firestore) ---------- */
+/* ----- Leitor: pasta GitHub caps/slug/num/01.png ----- */
+// sobrescreve abrirCapitulo se já existir wrapper — força caminho de pastas
+const _abrirCapAntes = window.abrirCapitulo;
+window.abrirCapitulo = function(titulo, numero) {
+    const obra = dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo);
+    const cap = obra && obra.capitulos ? obra.capitulos.find(c => c.num === numero) : null;
+    // se tiver paginasURLs http, usa; senão pasta local
+    const urlsHttp = cap && Array.isArray(cap.paginasURLs)
+        ? cap.paginasURLs.filter(u => String(u).startsWith('http'))
+        : [];
+
+    if (urlsHttp.length) {
+        if (typeof _abrirCapAntes === 'function') return _abrirCapAntes(titulo, numero);
+    }
+
+    mostrarLoading(() => {
+        leitorEstado.titulo = titulo;
+        leitorEstado.numAtual = numero;
+        leitorEstado.listaCaps = (obra && obra.capitulos ? obra.capitulos : []).map(c => c.num).sort((a, b) => a - b);
+
+        document.getElementById('leitorTitulo').textContent = `${titulo} — Cap. ${numero}`;
+        const paginas = document.getElementById('leitorPaginas');
+        paginas.innerHTML = '';
+
+        const maxTentativas = 40;
+        let carregadas = 0;
+        let falhasSeguidas = 0;
+
+        function tentar(n) {
+            if (n > maxTentativas || falhasSeguidas >= 2) {
+                if (carregadas === 0) {
+                    const div = document.createElement('div');
+                    div.className = 'leitor-pagina';
+                    div.innerHTML = `
+                        <img src="logo-capa.png" style="max-width:120px;opacity:0.5" onerror="this.style.display='none'">
+                        <div style="color:var(--verde-neon);font-family:Orbitron,sans-serif;">Cap. ${numero}</div>
+                        <div style="font-size:10px;text-align:center;max-width:260px;line-height:1.4;">
+                            Nenhuma página encontrada.<br>
+                            Suba no GitHub:<br>
+                            <code style="color:#39FF14">caps/${slugify(titulo)}/${numero}/01.png</code>
+                        </div>`;
+                    paginas.appendChild(div);
+                }
+                return;
+            }
+            const pag = String(n).padStart(2, '0');
+            const src = `caps/${slugify(titulo)}/${numero}/${pag}.png`;
+            const img = new Image();
+            img.onload = () => {
+                falhasSeguidas = 0;
+                carregadas++;
+                const div = document.createElement('div');
+                div.className = 'leitor-pagina';
+                div.style.minHeight = 'auto';
+                div.style.padding = '0';
+                div.style.border = 'none';
+                div.style.background = 'transparent';
+                div.innerHTML = `<img src="${src}" alt="Página ${n}" style="width:100%;height:auto;display:block;">`;
+                paginas.appendChild(div);
+                tentar(n + 1);
+            };
+            img.onerror = () => {
+                // tenta também .jpg
+                const srcJpg = `caps/${slugify(titulo)}/${numero}/${pag}.jpg`;
+                const img2 = new Image();
+                img2.onload = () => {
+                    falhasSeguidas = 0;
+                    carregadas++;
+                    const div = document.createElement('div');
+                    div.className = 'leitor-pagina';
+                    div.style.minHeight = 'auto';
+                    div.style.padding = '0';
+                    div.style.border = 'none';
+                    div.style.background = 'transparent';
+                    div.innerHTML = `<img src="${srcJpg}" alt="Página ${n}" style="width:100%;height:auto;display:block;">`;
+                    paginas.appendChild(div);
+                    tentar(n + 1);
+                };
+                img2.onerror = () => {
+                    falhasSeguidas++;
+                    tentar(n + 1);
+                };
+                img2.src = srcJpg;
+            };
+            img.src = src;
+        }
+        tentar(1);
+
+        registrarLeitura(titulo, numero);
+        renderizarContinuarLendo();
+
+        const idx = leitorEstado.listaCaps.indexOf(numero);
+        document.getElementById('btnCapAnterior').style.opacity = idx > 0 ? '1' : '0.35';
+        document.getElementById('btnCapProximo').style.opacity = idx < leitorEstado.listaCaps.length - 1 ? '1' : '0.35';
+
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('ativo'));
+        document.getElementById('view-leitor').classList.add('ativo');
+        window.scrollTo(0, 0);
+    });
+};
+
+/* ----- Tickets ----- */
 window.enviarTicketSuporte = async function() {
     const assunto = document.getElementById('ticketAssunto').value.trim();
     const mensagem = document.getElementById('ticketMensagem').value.trim();
@@ -2729,18 +2885,15 @@ window.enviarTicketSuporte = async function() {
     const err = document.getElementById('ticketErro');
     ok.style.display = 'none';
     err.style.display = 'none';
-
     if (!assunto || !mensagem) {
         err.textContent = 'Preencha assunto e mensagem.';
         err.style.display = 'block';
         return;
     }
-
     try {
         const id = String(Date.now());
         await setDoc(doc(db, 'tickets', id), {
-            assunto,
-            mensagem,
+            assunto, mensagem,
             email: usuarioAtualData ? usuarioAtualData.email : 'anônimo',
             nick: usuarioAtualData ? usuarioAtualData.nick : 'Visitante',
             uid: usuarioAtualData ? usuarioAtualData.uid : null,
@@ -2748,12 +2901,12 @@ window.enviarTicketSuporte = async function() {
             createdAt: Date.now(),
             status: 'aberto'
         });
-        ok.textContent = 'Ticket enviado com sucesso!';
+        ok.textContent = 'Ticket enviado!';
         ok.style.display = 'block';
         document.getElementById('ticketAssunto').value = '';
         document.getElementById('ticketMensagem').value = '';
     } catch (e) {
-        err.textContent = 'Erro ao enviar: ' + (e.message || e);
+        err.textContent = 'Erro: ' + (e.message || e);
         err.style.display = 'block';
     }
 };
@@ -2761,87 +2914,72 @@ window.enviarTicketSuporte = async function() {
 window.admRenderTickets = async function() {
     const box = document.getElementById('admListaTickets');
     if (!box) return;
-    box.innerHTML = '<div style="font-size:10px;color:var(--cinza-texto);">Carregando tickets...</div>';
+    box.innerHTML = '<div style="font-size:10px;color:var(--cinza-texto);">Carregando...</div>';
     try {
         const q = query(collection(db, 'tickets'), orderBy('createdAt', 'desc'), limit(50));
         const snap = await getDocs(q);
         if (snap.empty) {
-            box.innerHTML = '<div class="conteudo-placeholder">Nenhum ticket ainda.</div>';
+            box.innerHTML = '<div class="conteudo-placeholder">Nenhum ticket.</div>';
             return;
         }
         let html = '';
         snap.forEach(d => {
             const t = d.data();
-            html += `
-                <div class="adm-item">
-                    <div class="adm-item-titulo">${t.assunto}</div>
-                    <div class="adm-item-meta">${t.nick || ''} · ${t.email || ''} · ${t.data || ''} · ${t.status || ''}</div>
-                    <div style="font-size:10px;color:#ccc;margin-bottom:6px;">${t.mensagem || ''}</div>
-                    <div class="adm-item-acoes">
-                        <button onclick="admFecharTicket('${d.id}')">Marcar resolvido</button>
-                        <button class="perigo" onclick="admApagarTicket('${d.id}')">Apagar</button>
-                    </div>
-                </div>`;
+            html += `<div class="adm-item">
+                <div class="adm-item-titulo">${t.assunto}</div>
+                <div class="adm-item-meta">${t.nick||''} · ${t.email||''} · ${t.data||''} · ${t.status||''}</div>
+                <div style="font-size:10px;color:#ccc;margin-bottom:6px;">${t.mensagem||''}</div>
+                <div class="adm-item-acoes">
+                    <button onclick="admFecharTicket('${d.id}')">Resolvido</button>
+                    <button class="perigo" onclick="admApagarTicket('${d.id}')">Apagar</button>
+                </div>
+            </div>`;
         });
         box.innerHTML = html;
     } catch (e) {
-        box.innerHTML = `<div class="conteudo-placeholder">Erro ao carregar tickets. Crie o índice no Firebase se pedido.<br>${e.message || ''}</div>`;
+        box.innerHTML = `<div class="conteudo-placeholder">Erro: ${e.message||''}</div>`;
     }
 };
 
 window.admFecharTicket = async function(id) {
-    try {
-        await updateDoc(doc(db, 'tickets', id), { status: 'resolvido' });
-        admRenderTickets();
-    } catch (e) {
-        alert('Erro: ' + e.message);
-    }
+    try { await updateDoc(doc(db, 'tickets', id), { status: 'resolvido' }); admRenderTickets(); }
+    catch (e) { alert(e.message); }
 };
-
 window.admApagarTicket = async function(id) {
-    try {
-        await deleteDoc(doc(db, 'tickets', id));
-        admRenderTickets();
-    } catch (e) {
-        alert('Erro: ' + e.message);
-    }
+    try { await deleteDoc(doc(db, 'tickets', id)); admRenderTickets(); }
+    catch (e) { alert(e.message); }
 };
 
-/* ---------- Usuários ---------- */
 window.admRenderUsuarios = async function() {
     const box = document.getElementById('admListaUsuarios');
     if (!box) return;
-    box.innerHTML = '<div style="font-size:10px;color:var(--cinza-texto);">Carregando usuários...</div>';
+    box.innerHTML = '<div style="font-size:10px;color:var(--cinza-texto);">Carregando...</div>';
     try {
-        const q = query(collection(db, 'users'), limit(50));
-        const snap = await getDocs(q);
+        const snap = await getDocs(query(collection(db, 'users'), limit(50)));
         const extraAdmins = JSON.parse(localStorage.getItem(CHAVE_ADMINS_EXTRA) || '[]');
         if (snap.empty) {
-            box.innerHTML = '<div class="conteudo-placeholder">Nenhum usuário no Firebase ainda.</div>';
+            box.innerHTML = '<div class="conteudo-placeholder">Nenhum usuário.</div>';
             return;
         }
         let html = '';
         snap.forEach(docSnap => {
             const u = docSnap.data();
             const email = u.email || '';
-            const isAdm = u.isAdmin
-                || EMAILS_ADMIN.map(e => e.toLowerCase()).includes(email.toLowerCase())
-                || extraAdmins.map(e => e.toLowerCase()).includes(email.toLowerCase());
-            html += `
-                <div class="adm-item">
-                    <div class="adm-item-titulo">${u.nick || 'Sem nick'}</div>
-                    <div class="adm-item-meta">${email} · obras: ${u.obrasLidas || 0} ${isAdm ? '· 🛠️ ADM' : ''}</div>
-                    <div class="adm-item-acoes">
-                        ${isAdm
-                            ? `<button class="perigo" onclick="admRemoverAdmin('${docSnap.id}', '${email}')">Remover ADM</button>`
-                            : `<button onclick="admPromoverAdmin('${docSnap.id}', '${email}')">Promover a ADM</button>`
-                        }
-                    </div>
-                </div>`;
+            const isAdm = u.isAdmin || EMAILS_ADMIN.map(e=>e.toLowerCase()).includes(email.toLowerCase())
+                || extraAdmins.map(e=>e.toLowerCase()).includes(email.toLowerCase());
+            html += `<div class="adm-item">
+                <div class="adm-item-titulo">${u.nick||'Sem nick'}</div>
+                <div class="adm-item-meta">${email} · ${u.obrasLidas||0} obras ${isAdm?'· 🛠️ ADM':''}</div>
+                <div class="adm-item-acoes">
+                    ${isAdm
+                        ? `<button class="perigo" onclick="admRemoverAdmin('${docSnap.id}','${email}')">Remover ADM</button>`
+                        : `<button onclick="admPromoverAdmin('${docSnap.id}','${email}')">Promover ADM</button>`}
+                </div>
+            </div>`;
         });
         box.innerHTML = html;
     } catch (e) {
-        box.innerHTML = `<div class="conteudo-placeholder">Erro: ${e.message || e}</div>`;
+        box.innerHTML = `<div class="conteudo-placeholder">Erro: ${e.message||e}</div>`;
     }
 };
 
@@ -2853,11 +2991,8 @@ window.admPromoverAdmin = async function(uid, email) {
         localStorage.setItem(CHAVE_ADMINS_EXTRA, JSON.stringify(arr));
         atualizarVisibilidadeMenuAdm();
         admRenderUsuarios();
-    } catch (e) {
-        alert('Erro ao promover: ' + e.message);
-    }
+    } catch (e) { alert(e.message); }
 };
-
 window.admRemoverAdmin = async function(uid, email) {
     try {
         await updateDoc(doc(db, 'users', uid), { isAdmin: false });
@@ -2866,16 +3001,14 @@ window.admRemoverAdmin = async function(uid, email) {
         localStorage.setItem(CHAVE_ADMINS_EXTRA, JSON.stringify(arr));
         atualizarVisibilidadeMenuAdm();
         admRenderUsuarios();
-    } catch (e) {
-        alert('Erro: ' + e.message);
-    }
+    } catch (e) { alert(e.message); }
 };
 
-/* ---------- Hooks ---------- */
 document.addEventListener('DOMContentLoaded', () => {
     atualizarVisibilidadeMenuAdm();
     carregarObrasFirestore().then(() => {
         renderizarContinuarLendo();
+        renderizarLancamentos();
     });
     setInterval(atualizarVisibilidadeMenuAdm, 4000);
 });

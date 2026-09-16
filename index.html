@@ -389,91 +389,12 @@
 
             </div>
 
-            <!-- SEÇÃO: LANÇAMENTOS -->
+            <!-- SEÇÃO: LANÇAMENTOS (dinâmico — obras mais recentes primeiro) -->
             <h2 class="titulo-secao">LANÇAMENTOS</h2>
-
-            <div class="manhwa-grid">
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">[ CAPA ]</div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Solo Leveling</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 146</span>
-                                <span class="cap-data">Hoje</span>
-                            </div>
-
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 145</span>
-                                <span class="cap-data">Ontem</span>
-                            </div>
-                        </div>
-                    </div>
+            <div class="manhwa-grid" id="lancamentosGrid">
+                <div class="conteudo-placeholder" style="grid-column:1/-1;font-size:11px;">
+                    Nenhuma obra cadastrada ainda. Use o Painel ADM.
                 </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">[ CAPA ]</div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Omniscient Reader</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 92</span>
-                                <span class="cap-data">Hoje</span>
-                            </div>
-
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 91</span>
-                                <span class="cap-data">Ontem</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">[ CAPA ]</div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Beginning After</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 110</span>
-                                <span class="cap-data">2d</span>
-                            </div>
-
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 109</span>
-                                <span class="cap-data">3d</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">[ CAPA ]</div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Nano Machine</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 180</span>
-                                <span class="cap-data">3d</span>
-                            </div>
-
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 179</span>
-                                <span class="cap-data">4d</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
             </div>
 
         </div>
@@ -680,8 +601,11 @@
                     <textarea id="admObraSinopse" class="form-input" rows="4" style="min-height:90px;resize:vertical;" placeholder="Sinopse da obra..."></textarea>
                 </div>
                 <div class="form-group">
-                    <label>Capa (imagem)</label>
-                    <input type="file" id="admObraCapa" accept="image/*" class="form-input">
+                    <label>Capa</label>
+                    <div id="admObraCapaHint" class="adm-hint">
+                        Depois de salvar, suba a capa no GitHub em:<br>
+                        <code id="admObraCapaPath">capas/nome-da-obra.png</code>
+                    </div>
                 </div>
                 <div id="admObraMsg" class="sucesso-msg"></div>
                 <div id="admObraErro" class="erro-msg"></div>
@@ -707,17 +631,15 @@
                     <input type="text" id="admCapTitulo" class="form-input" placeholder="Ex: O Monarca das Sombras">
                 </div>
                 <div class="form-group">
-                    <label>Páginas do capítulo (várias imagens, sem limite)</label>
-                    <input type="file" id="admCapPaginas" accept="image/*" multiple class="form-input">
+                    <label>Páginas do capítulo</label>
+                    <div class="adm-hint">
+                        Depois de salvar, suba as páginas no GitHub em:<br>
+                        <code id="admCapPathHint">caps/nome-da-obra/NUMERO/01.png, 02.png...</code>
+                    </div>
                 </div>
-                <div id="admCapPreview" style="font-size:10px;color:var(--cinza-texto);margin-bottom:8px;"></div>
                 <div id="admCapMsg" class="sucesso-msg"></div>
                 <div id="admCapErro" class="erro-msg"></div>
                 <button class="btn-submit" onclick="admSalvarCapitulo()">Salvar capítulo</button>
-                <p style="font-size:9px;color:var(--cinza-texto);margin-top:10px;line-height:1.4;">
-                    Dica: as imagens também podem ser colocadas manualmente em<br>
-                    <code style="color:#39FF14;">caps/nome-da-obra/NUMERO/01.png</code>
-                </p>
             </div>
 
             <!-- TAB TICKETS -->
