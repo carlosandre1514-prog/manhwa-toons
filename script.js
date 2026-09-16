@@ -23,6 +23,7 @@ import {
     orderBy,
     limit,
     updateDoc,
+    deleteDoc,
     where
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
@@ -135,6 +136,12 @@ window.toggleMenu = function() {
 
 window.mudarTela = function(idTela) {
 
+    // Painel ADM é restrito
+    if (idTela === 'adm' && !isAdminUser()) {
+        alert('Acesso restrito ao Painel ADM.');
+        return;
+    }
+
     const views = document.querySelectorAll('.view');
 
     views.forEach(v => {
@@ -151,6 +158,24 @@ window.mudarTela = function(idTela) {
     toggleMenu();
 
     window.scrollTo(0, 0);
+
+    // Ações específicas de cada tela
+    if (idTela === 'biblioteca') {
+        generoFiltroAtivo = 'Todos';
+        renderizarFiltrosGenero();
+        renderizarBiblioteca();
+        const input = document.getElementById('inputPesquisaBiblioteca');
+        if (input) input.value = '';
+    }
+    if (idTela === 'favoritos') {
+        renderizarFavoritos();
+    }
+    if (idTela === 'inicio') {
+        renderizarContinuarLendo();
+    }
+    if (idTela === 'adm') {
+        admTab('obras');
+    }
 };
 
 
@@ -1643,18 +1668,6 @@ const dadosObras = {
             { num: 182, titulo: "Poder Despertado", data: "3d", novo: false, lido: false }
         ]
     },
-    "Beginning After": {
-        titulo: "The Beginning After The End",
-        status: "Ativo",
-        views: "2.8M",
-        generos: ["Ação", "Fantasia", "Aventura", "Reencarnação"],
-        sinopse: "Rei Grey, o monarca mais poderoso do continente, é assassinado e reencarna em um novo mundo como Arthur Leywin. Com as memórias de sua vida anterior, ele busca uma vida diferente, mas o destino o puxa novamente para o centro de conflitos épicos e guerras entre raças.",
-        capitulos: [
-            { num: 185, titulo: "O Novo Rei", data: "Hoje", novo: true, lido: false },
-            { num: 184, titulo: "Treinamento no Continente", data: "Ontem", novo: false, lido: false },
-            { num: 183, titulo: "Ameaças Antigas", data: "2d", novo: false, lido: false }
-        ]
-    },
     "Mercenary Enrollment": {
         titulo: "Mercenary Enrollment",
         status: "Ativo",
@@ -1686,68 +1699,96 @@ const dadosObras = {
 let obraAtualFavoritada = false;
 
 window.abrirObra = function(nomeObra) {
-    const obra = dadosObras[nomeObra];
+    mostrarLoading(() => {
+        const obra = dadosObras[nomeObra] || Object.values(dadosObras).find(o => o.titulo === nomeObra);
 
-    if (!obra) {
-        // Fallback genérico
-        document.getElementById('obraTitulo').textContent = nomeObra;
-        document.getElementById('obraStatus').textContent = 'Ativo';
-        document.getElementById('obraViews').textContent = '👁️ --';
-        document.getElementById('obraSinopse').textContent = 'Sinopse ainda não disponível para esta obra.';
-        document.getElementById('obraGeneros').innerHTML = '<span class="genero-tag">Desconhecido</span>';
-        document.getElementById('capitulosLista').innerHTML = `
-            <div class="capitulo-item" onclick="alert('Capítulo em breve...')">
-                <div class="capitulo-info">
-                    <span class="capitulo-numero">Cap. 1</span>
-                    <span class="capitulo-titulo">Em breve</span>
-                </div>
-                <div class="capitulo-direita">
-                    <span class="capitulo-data">--</span>
-                </div>
-            </div>
-        `;
-    } else {
-        document.getElementById('obraTitulo').textContent = obra.titulo;
-        document.getElementById('obraStatus').textContent = obra.status;
-        document.getElementById('obraViews').textContent = '👁️ ' + obra.views;
-        document.getElementById('obraSinopse').textContent = obra.sinopse;
-
-        // Gêneros
-        const generosHTML = obra.generos.map(g => `<span class="genero-tag">${g}</span>`).join('');
-        document.getElementById('obraGeneros').innerHTML = generosHTML;
-
-        // Capítulos
-        let capsHTML = '';
-        obra.capitulos.forEach(cap => {
-            const classeLido = cap.lido ? 'capitulo-lido' : '';
-            const badgeNovo = cap.novo ? '<span class="capitulo-novo">NEW</span>' : '';
-            capsHTML += `
-                <div class="capitulo-item ${classeLido}" onclick="abrirCapitulo('${obra.titulo}', ${cap.num})">
+        if (!obra) {
+            // Fallback genérico para obra desconhecida
+            document.getElementById('obraTitulo').textContent = nomeObra;
+            document.getElementById('obraStatus').textContent = 'Ativo';
+            document.getElementById('obraViews').textContent = '👁️ --';
+            document.getElementById('obraSinopse').textContent = 'Sinopse ainda não disponível para esta obra.';
+            document.getElementById('obraGeneros').innerHTML = '<span class="genero-tag">Desconhecido</span>';
+            document.getElementById('capitulosLista').innerHTML = `
+                <div class="capitulo-item" onclick="alert('Capítulo em breve...')">
                     <div class="capitulo-info">
-                        <span class="capitulo-numero">Cap. ${cap.num}</span>
-                        <span class="capitulo-titulo">${cap.titulo}</span>
+                        <span class="capitulo-numero">Cap. 1</span>
+                        <span class="capitulo-titulo">Em breve</span>
                     </div>
                     <div class="capitulo-direita">
-                        ${badgeNovo}
-                        <span class="capitulo-data">${cap.data}</span>
+                        <span class="capitulo-data">--</span>
                     </div>
                 </div>
             `;
-        });
-        document.getElementById('capitulosLista').innerHTML = capsHTML;
-    }
+        } else {
+            document.getElementById('obraTitulo').textContent = obra.titulo;
+            document.getElementById('obraStatus').textContent = obra.status;
+            document.getElementById('obraViews').textContent = '👁️ ' + obra.views;
+            document.getElementById('obraSinopse').textContent = obra.sinopse;
 
-    // Reset favorito visual
-    obraAtualFavoritada = false;
-    const btnFav = document.getElementById('btnFavoritar');
-    btnFav.textContent = '☆ Favoritar';
-    btnFav.classList.remove('favoritado');
+            // Gêneros
+            const generosHTML = obra.generos.map(g => `<span class="genero-tag">${g}</span>`).join('');
+            document.getElementById('obraGeneros').innerHTML = generosHTML;
 
-    // Muda para a tela da obra
-    const views = document.querySelectorAll('.view');
-    views.forEach(v => v.classList.remove('ativo'));
-    document.getElementById('view-obra').classList.add('ativo');
-    window.scrollTo(0, 0);
+            // Capítulos (com status lido + ordenação — ver atualizarListaCapitulos)
+            atualizarListaCapitulos(obra);
+        }
+
+        // Capa grande
+        const capaEl = document.getElementById('obraCapaGrande');
+        if (capaEl) {
+            capaEl.innerHTML = htmlCapa(nomeObra);
+        }
+
+        // Estado do botão favoritar
+        const titulo = obra ? obra.titulo : nomeObra;
+        const btnFav = document.getElementById('btnFavoritar');
+        if (isFavorito(titulo)) {
+            btnFav.textContent = '★ Favoritado';
+            btnFav.classList.add('favoritado');
+            obraAtualFavoritada = true;
+        } else {
+            btnFav.textContent = '☆ Favoritar';
+            btnFav.classList.remove('favoritado');
+            obraAtualFavoritada = false;
+        }
+
+        // Progresso de leitura
+        const prog = getProgresso(titulo);
+        const txt = document.getElementById('obraProgressoTexto');
+        const wrap = document.getElementById('obraProgressoBarraWrap');
+        const bar = document.getElementById('obraProgressoBarra');
+        if (txt && wrap && bar) {
+            if (prog.total > 0) {
+                txt.textContent = `Progresso: ${prog.lidos} de ${prog.total} capítulos (${prog.pct}%)`;
+                wrap.style.display = 'block';
+                bar.style.width = prog.pct + '%';
+            } else {
+                txt.textContent = '';
+                wrap.style.display = 'none';
+            }
+        }
+
+        // Botão "Começar a ler" → abre o último capítulo lido ou o mais recente
+        const btnLer = document.getElementById('btnLerAgora');
+        if (btnLer) {
+            btnLer.onclick = () => {
+                if (!obra || !obra.capitulos || !obra.capitulos.length) {
+                    alert('Nenhum capítulo disponível');
+                    return;
+                }
+                const hist = carregarHistorico()[titulo];
+                const num = hist && hist.ultimo ? hist.ultimo : obra.capitulos[obra.capitulos.length - 1].num;
+                abrirCapitulo(obra.titulo, num);
+            };
+        }
+
+        // Muda para a tela da obra
+        const views = document.querySelectorAll('.view');
+        views.forEach(v => v.classList.remove('ativo'));
+        document.getElementById('view-obra').classList.add('ativo');
+        window.scrollTo(0, 0);
+    });
 };
 
 window.voltarParaInicio = function() {
@@ -1755,23 +1796,6 @@ window.voltarParaInicio = function() {
     views.forEach(v => v.classList.remove('ativo'));
     document.getElementById('view-inicio').classList.add('ativo');
     window.scrollTo(0, 0);
-};
-
-window.abrirCapitulo = function(titulo, numero) {
-    alert(`Abrindo Capítulo ${numero} de "${titulo}"...\n\n(Em breve: leitor de capítulos)`);
-};
-
-window.toggleFavorito = function() {
-    const btn = document.getElementById('btnFavoritar');
-    obraAtualFavoritada = !obraAtualFavoritada;
-
-    if (obraAtualFavoritada) {
-        btn.textContent = '★ Favoritado';
-        btn.classList.add('favoritado');
-    } else {
-        btn.textContent = '☆ Favoritar';
-        btn.classList.remove('favoritado');
-    }
 };
 
 // Atualiza os cards existentes para abrirem a tela de detalhes
@@ -1859,52 +1883,13 @@ function obterTodasObras() {
                 titulo: obra.titulo,
                 views: obra.views,
                 status: obra.status,
-                generos: obra.generos
+                generos: obra.generos,
+                _firebaseSlug: obra._firebaseSlug || null
             });
         }
     }
     return lista;
 }
-
-function criarCardObra(obra) {
-    const card = document.createElement('div');
-    card.className = 'manhwa-card';
-    card.onclick = () => abrirObra(obra.titulo);
-    card.innerHTML = `
-        <div class="manhwa-capa">
-            [ CAPA ]
-            <span class="badge-views">👁️ ${obra.views}</span>
-        </div>
-        <div class="manhwa-info">
-            <div class="manhwa-titulo">${obra.titulo}</div>
-            <div class="ultimos-caps">
-                <div class="cap-linha">
-                    <span class="cap-numero">${obra.status}</span>
-                    <span class="cap-data">${obra.generos[0] || ''}</span>
-                </div>
-            </div>
-        </div>
-    `;
-    return card;
-}
-
-window.renderizarBiblioteca = function(filtro = '') {
-    const grid = document.getElementById('bibliotecaGrid');
-    if (!grid) return;
-
-    grid.innerHTML = '';
-    const termo = filtro.trim().toLowerCase();
-    const obras = obterTodasObras().filter(o =>
-        !termo || o.titulo.toLowerCase().includes(termo)
-    );
-
-    if (obras.length === 0) {
-        grid.innerHTML = `<div class="conteudo-placeholder" style="grid-column: 1 / -1;">Nenhuma obra encontrada.</div>`;
-        return;
-    }
-
-    obras.forEach(obra => grid.appendChild(criarCardObra(obra)));
-};
 
 window.filtrarBiblioteca = function(termo) {
     renderizarBiblioteca(termo);
@@ -1940,7 +1925,6 @@ window.renderizarFavoritos = function() {
     });
 };
 
-// Sobrescreve o toggleFavorito para salvar de verdade
 window.toggleFavorito = function() {
     const titulo = document.getElementById('obraTitulo').textContent.trim();
     const btn = document.getElementById('btnFavoritar');
@@ -1958,40 +1942,6 @@ window.toggleFavorito = function() {
     // Atualiza a tela de favoritos se estiver aberta
     renderizarFavoritos();
 };
-
-// Quando abrir a obra, mostra o estado correto do botão favorito
-const _abrirObraOriginal = window.abrirObra;
-window.abrirObra = function(nomeObra) {
-    _abrirObraOriginal(nomeObra);
-
-    const titulo = document.getElementById('obraTitulo').textContent.trim();
-    const btn = document.getElementById('btnFavoritar');
-    if (isFavorito(titulo)) {
-        btn.textContent = '★ Favoritado';
-        btn.classList.add('favoritado');
-        obraAtualFavoritada = true;
-    } else {
-        btn.textContent = '☆ Favoritar';
-        btn.classList.remove('favoritado');
-        obraAtualFavoritada = false;
-    }
-};
-
-// Quando mudar de tela, renderiza biblioteca ou favoritos
-const _mudarTelaOriginal = window.mudarTela;
-window.mudarTela = function(idTela) {
-    _mudarTelaOriginal(idTela);
-
-    if (idTela === 'biblioteca') {
-        renderizarBiblioteca();
-        const input = document.getElementById('inputPesquisaBiblioteca');
-        if (input) input.value = '';
-    }
-    if (idTela === 'favoritos') {
-        renderizarFavoritos();
-    }
-};
-
 
 /* =========================================================
    LOADING OVERLAY
@@ -2194,10 +2144,14 @@ window.abrirCapitulo = function(titulo, numero) {
         return;
     }
 
+    // Se o capítulo tem páginas enviadas via Painel ADM (Firebase Storage), usa elas.
+    const cap = obra.capitulos ? obra.capitulos.find(c => c.num === numero) : null;
+    const urlsFirebase = cap && Array.isArray(cap.paginasURLs) ? cap.paginasURLs : null;
+
     mostrarLoading(() => {
         leitorEstado.titulo = titulo;
         leitorEstado.numAtual = numero;
-        // Ordena do mais antigo pro mais novo para navegação sequential
+        // Ordena do mais antigo pro mais novo para navegação sequencial
         leitorEstado.listaCaps = (obra.capitulos || []).map(c => c.num).sort((a, b) => a - b);
 
         document.getElementById('leitorTitulo').textContent = `${titulo} — Cap. ${numero}`;
@@ -2205,62 +2159,77 @@ window.abrirCapitulo = function(titulo, numero) {
         const paginas = document.getElementById('leitorPaginas');
         paginas.innerHTML = '';
 
-        // Tenta carregar páginas 01..30; para quando der erro em sequência
-        const maxTentativas = 30;
-        let carregadas = 0;
-        let falhasSeguidas = 0;
-
-        function tentarPagina(n) {
-            if (n > maxTentativas || falhasSeguidas >= 2) {
-                if (carregadas === 0) {
-                    // Nenhuma página real: mostra placeholders
-                    for (let i = 1; i <= 3; i++) {
-                        const div = document.createElement('div');
-                        div.className = 'leitor-pagina';
-                        div.innerHTML = `
-                            <img src="logo-capa.png" alt="" style="max-width:140px;opacity:0.45;" onerror="this.style.display='none'">
-                            <div style="color:var(--verde-neon);font-family:Orbitron,sans-serif;font-size:13px;">Cap. ${numero}</div>
-                            <div>Página ${i}</div>
-                            <div style="font-size:9px;color:#666;text-align:center;max-width:240px;">
-                                Coloque as imagens em:<br>
-                                <code style="color:#39FF14;">caps/${slugify(titulo)}/${numero}/0${i}.png</code>
-                            </div>
-                        `;
-                        paginas.appendChild(div);
-                    }
-                }
-                return;
-            }
-
-            const img = new Image();
-            const src = caminhoPaginaCapitulo(titulo, numero, n);
-            img.onload = () => {
-                falhasSeguidas = 0;
-                carregadas++;
+        if (urlsFirebase && urlsFirebase.length) {
+            // Páginas hospedadas no Firebase Storage (cadastradas via Painel ADM)
+            urlsFirebase.forEach((url, i) => {
                 const div = document.createElement('div');
                 div.className = 'leitor-pagina';
                 div.style.minHeight = 'auto';
                 div.style.padding = '0';
                 div.style.border = 'none';
                 div.style.background = 'transparent';
-                const el = document.createElement('img');
-                el.src = src;
-                el.alt = `Página ${n}`;
-                el.style.width = '100%';
-                el.style.height = 'auto';
-                el.style.display = 'block';
-                div.appendChild(el);
+                div.innerHTML = `<img src="${url}" alt="Página ${i + 1}" style="width:100%;height:auto;display:block;">`;
                 paginas.appendChild(div);
-                tentarPagina(n + 1);
-            };
-            img.onerror = () => {
-                falhasSeguidas++;
-                tentarPagina(n + 1);
-            };
-            img.src = src;
-        }
+            });
+        } else {
+            // Fallback: procura páginas manuais na pasta local caps/{obra}/{numero}/01.png, 02.png...
+            // Tenta carregar páginas 01..30; para quando der erro em sequência
+            const maxTentativas = 30;
+            let carregadas = 0;
+            let falhasSeguidas = 0;
 
-        tentarPagina(1);
+            function tentarPagina(n) {
+                if (n > maxTentativas || falhasSeguidas >= 2) {
+                    if (carregadas === 0) {
+                        // Nenhuma página real: mostra placeholders
+                        for (let i = 1; i <= 3; i++) {
+                            const div = document.createElement('div');
+                            div.className = 'leitor-pagina';
+                            div.innerHTML = `
+                                <img src="logo-capa.png" alt="" style="max-width:140px;opacity:0.45;" onerror="this.style.display='none'">
+                                <div style="color:var(--verde-neon);font-family:Orbitron,sans-serif;font-size:13px;">Cap. ${numero}</div>
+                                <div>Página ${i}</div>
+                                <div style="font-size:9px;color:#666;text-align:center;max-width:240px;">
+                                    Coloque as imagens em:<br>
+                                    <code style="color:#39FF14;">caps/${slugify(titulo)}/${numero}/0${i}.png</code>
+                                </div>
+                            `;
+                            paginas.appendChild(div);
+                        }
+                    }
+                    return;
+                }
+
+                const img = new Image();
+                const src = caminhoPaginaCapitulo(titulo, numero, n);
+                img.onload = () => {
+                    falhasSeguidas = 0;
+                    carregadas++;
+                    const div = document.createElement('div');
+                    div.className = 'leitor-pagina';
+                    div.style.minHeight = 'auto';
+                    div.style.padding = '0';
+                    div.style.border = 'none';
+                    div.style.background = 'transparent';
+                    const el = document.createElement('img');
+                    el.src = src;
+                    el.alt = `Página ${n}`;
+                    el.style.width = '100%';
+                    el.style.height = 'auto';
+                    el.style.display = 'block';
+                    div.appendChild(el);
+                    paginas.appendChild(div);
+                    tentarPagina(n + 1);
+                };
+                img.onerror = () => {
+                    falhasSeguidas++;
+                    tentarPagina(n + 1);
+                };
+                img.src = src;
+            }
+
+            tentarPagina(1);
+        }
 
         registrarLeitura(titulo, numero);
         renderizarContinuarLendo();
@@ -2345,60 +2314,6 @@ function atualizarListaCapitulos(obra) {
 
 
 /* =========================================================
-   ABRIR OBRA COM LOADING + PROGRESSO + CAPAS
-   ========================================================= */
-
-const _abrirObraBase = window.abrirObra;
-
-window.abrirObra = function(nomeObra) {
-    mostrarLoading(() => {
-        _abrirObraBase(nomeObra);
-
-        // capa grande
-        const capaEl = document.getElementById('obraCapaGrande');
-        if (capaEl) {
-            capaEl.innerHTML = htmlCapa(nomeObra);
-        }
-
-        // progresso
-        const prog = getProgresso(nomeObra);
-        const txt = document.getElementById('obraProgressoTexto');
-        const wrap = document.getElementById('obraProgressoBarraWrap');
-        const bar = document.getElementById('obraProgressoBarra');
-        if (txt && wrap && bar) {
-            if (prog.total > 0) {
-                txt.textContent = `Progresso: ${prog.lidos} de ${prog.total} capítulos (${prog.pct}%)`;
-                wrap.style.display = 'block';
-                bar.style.width = prog.pct + '%';
-            } else {
-                txt.textContent = '';
-                wrap.style.display = 'none';
-            }
-        }
-
-        // atualiza lista de capítulos com status lido + ordenação
-        const obraRef = dadosObras[nomeObra] || Object.values(dadosObras).find(o => o.titulo === nomeObra);
-        if (obraRef) atualizarListaCapitulos(obraRef);
-
-        // botão ler agora → abre último ou primeiro capítulo
-        const btnLer = document.getElementById('btnLerAgora');
-        if (btnLer) {
-            btnLer.onclick = () => {
-                const obra = dadosObras[nomeObra] || Object.values(dadosObras).find(o => o.titulo === nomeObra);
-                if (!obra || !obra.capitulos || !obra.capitulos.length) {
-                    alert('Nenhum capítulo disponível');
-                    return;
-                }
-                const hist = carregarHistorico()[nomeObra];
-                const num = hist && hist.ultimo ? hist.ultimo : obra.capitulos[obra.capitulos.length - 1].num;
-                abrirCapitulo(obra.titulo, num);
-            };
-        }
-    });
-};
-
-
-/* =========================================================
    BIBLIOTECA COM FILTRO DE GÊNERO + CAPAS
    ========================================================= */
 
@@ -2424,7 +2339,6 @@ window.aplicarFiltroGenero = function(genero) {
     filtrarBiblioteca(input ? input.value : '');
 };
 
-// sobrescreve criarCardObra para usar capas reais
 window.criarCardObra = function(obra) {
     const card = document.createElement('div');
     card.className = 'manhwa-card';
@@ -2449,7 +2363,6 @@ window.criarCardObra = function(obra) {
     return card;
 };
 
-const _renderizarBibliotecaOld = window.renderizarBiblioteca;
 window.renderizarBiblioteca = function(filtro = '') {
     const grid = document.getElementById('bibliotecaGrid');
     if (!grid) return;
@@ -2471,26 +2384,6 @@ window.renderizarBiblioteca = function(filtro = '') {
 
     obras.forEach(obra => grid.appendChild(criarCardObra(obra)));
 };
-
-// atualiza mudarTela para filtros
-const _mudarTela2 = window.mudarTela;
-window.mudarTela = function(idTela) {
-    _mudarTela2(idTela);
-    if (idTela === 'biblioteca') {
-        generoFiltroAtivo = 'Todos';
-        renderizarFiltrosGenero();
-        renderizarBiblioteca();
-        const input = document.getElementById('inputPesquisaBiblioteca');
-        if (input) input.value = '';
-    }
-    if (idTela === 'favoritos') {
-        renderizarFavoritos();
-    }
-    if (idTela === 'inicio') {
-        renderizarContinuarLendo();
-    }
-};
-
 
 /* =========================================================
    ATUALIZA CARDS ESTÁTICOS DO HTML COM CAPAS + CLIQUE
@@ -2561,7 +2454,8 @@ async function carregarObrasFirestore() {
                     sinopse: data.sinopse || '',
                     capitulos: data.capitulos || [],
                     capaURL: data.capaURL || null,
-                    capaData: data.capaURL || null // reutiliza no htmlCapa
+                    capaData: data.capaURL || null, // reutiliza no htmlCapa
+                    _firebaseSlug: docSnap.id // marca que essa obra existe de verdade no Firestore (pode ser apagada)
                 };
             }
         });
@@ -2657,7 +2551,8 @@ window.admSalvarObra = async function() {
         // atualiza memória local
         dadosObras[titulo] = {
             ...obraData,
-            capaData: capaURL
+            capaData: capaURL,
+            _firebaseSlug: slug
         };
 
         msg.textContent = 'Obra salva no Firebase com sucesso!';
@@ -2686,17 +2581,40 @@ window.admRenderListaObras = async function() {
             box.innerHTML = '<div class="conteudo-placeholder">Nenhuma obra no Firebase ainda.</div>';
             return;
         }
-        box.innerHTML = todas.map(o => `
+        box.innerHTML = todas.map(o => {
+            const tituloEscapado = String(o.titulo).replace(/'/g, "\\'");
+            const btnExcluir = o._firebaseSlug
+                ? `<button class="perigo" onclick="admApagarObra('${o._firebaseSlug}', '${tituloEscapado}')">Excluir</button>`
+                : `<span style="font-size:9px;color:var(--cinza-texto);" title="Obra de exemplo fixa no código — não vem do Firebase">exemplo</span>`;
+            return `
             <div class="adm-item">
                 <div class="adm-item-titulo">${o.titulo}</div>
                 <div class="adm-item-meta">${o.status} · ${o.views} · ${(o.generos||[]).join(', ')}</div>
                 <div class="adm-item-acoes">
-                    <button onclick="abrirObra('${String(o.titulo).replace(/'/g, "\\'")}')">Ver</button>
+                    <button onclick="abrirObra('${tituloEscapado}')">Ver</button>
+                    ${btnExcluir}
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
     } catch (e) {
         box.innerHTML = `<div class="conteudo-placeholder">Erro: ${e.message}</div>`;
+    }
+};
+
+/* ---------- Apagar obra (Firestore + memória local) ---------- */
+window.admApagarObra = async function(slug, titulo) {
+    if (!confirm(`Excluir "${titulo}" definitivamente? Isso apaga a obra e a lista de capítulos do Firebase (as imagens enviadas ao Storage não são apagadas automaticamente).`)) {
+        return;
+    }
+    try {
+        await deleteDoc(doc(db, 'obras', slug));
+        delete dadosObras[titulo];
+        admRenderListaObras();
+        admPopularSelectObras();
+        renderizarContinuarLendo();
+    } catch (e) {
+        alert('Erro ao excluir: ' + (e.message || e));
     }
 };
 
@@ -2803,51 +2721,6 @@ window.admSalvarCapitulo = async function() {
     }
 };
 
-/* ---------- Leitor: prioriza URLs do Firebase ---------- */
-const _abrirCapituloFirebase = window.abrirCapitulo;
-window.abrirCapitulo = function(titulo, numero) {
-    const obra = dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo);
-    const cap = obra && obra.capitulos ? obra.capitulos.find(c => c.num === numero) : null;
-    const urls = cap && Array.isArray(cap.paginasURLs) ? cap.paginasURLs : null;
-
-    if (urls && urls.length) {
-        mostrarLoading(() => {
-            leitorEstado.titulo = titulo;
-            leitorEstado.numAtual = numero;
-            leitorEstado.listaCaps = (obra.capitulos || []).map(c => c.num).sort((a, b) => a - b);
-
-            document.getElementById('leitorTitulo').textContent = `${titulo} — Cap. ${numero}`;
-            const paginas = document.getElementById('leitorPaginas');
-            paginas.innerHTML = '';
-            urls.forEach((url, i) => {
-                const div = document.createElement('div');
-                div.className = 'leitor-pagina';
-                div.style.minHeight = 'auto';
-                div.style.padding = '0';
-                div.style.border = 'none';
-                div.style.background = 'transparent';
-                div.innerHTML = `<img src="${url}" alt="Página ${i + 1}" style="width:100%;height:auto;display:block;">`;
-                paginas.appendChild(div);
-            });
-
-            registrarLeitura(titulo, numero);
-            renderizarContinuarLendo();
-
-            const idx = leitorEstado.listaCaps.indexOf(numero);
-            document.getElementById('btnCapAnterior').style.opacity = idx > 0 ? '1' : '0.35';
-            document.getElementById('btnCapProximo').style.opacity = idx < leitorEstado.listaCaps.length - 1 ? '1' : '0.35';
-
-            document.querySelectorAll('.view').forEach(v => v.classList.remove('ativo'));
-            document.getElementById('view-leitor').classList.add('ativo');
-            window.scrollTo(0, 0);
-        });
-        return;
-    }
-
-    // fallback: pasta local caps/ ou localStorage antigo
-    _abrirCapituloFirebase(titulo, numero);
-};
-
 /* ---------- Tickets (Firestore) ---------- */
 window.enviarTicketSuporte = async function() {
     const assunto = document.getElementById('ticketAssunto').value.trim();
@@ -2927,8 +2800,7 @@ window.admFecharTicket = async function(id) {
 
 window.admApagarTicket = async function(id) {
     try {
-        // delete via set status only if delete not imported — use update + filter, or import deleteDoc
-        await updateDoc(doc(db, 'tickets', id), { status: 'apagado', mensagem: '[apagado]' });
+        await deleteDoc(doc(db, 'tickets', id));
         admRenderTickets();
     } catch (e) {
         alert('Erro: ' + e.message);
@@ -3000,16 +2872,6 @@ window.admRemoverAdmin = async function(uid, email) {
 };
 
 /* ---------- Hooks ---------- */
-const _mudarTelaAdm = window.mudarTela;
-window.mudarTela = function(idTela) {
-    if (idTela === 'adm' && !isAdminUser()) {
-        alert('Acesso restrito ao Painel ADM.');
-        return;
-    }
-    _mudarTelaAdm(idTela);
-    if (idTela === 'adm') admTab('obras');
-};
-
 document.addEventListener('DOMContentLoaded', () => {
     atualizarVisibilidadeMenuAdm();
     carregarObrasFirestore().then(() => {
