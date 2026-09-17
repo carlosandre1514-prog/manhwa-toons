@@ -2,6 +2,8 @@ import {
     initializeApp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 
+import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging.js";
+
 import {
     getAuth,
     createUserWithEmailAndPassword,
@@ -24,7 +26,10 @@ import {
     limit,
     updateDoc,
     deleteDoc,
-    where
+    where,
+    onSnapshot,
+    addDoc,
+    serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 import {
@@ -48,6 +53,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+let messaging = null;
+// Cole a chave Web Push (VAPID) do Firebase Console → Project Settings → Cloud Messaging
+const FIREBASE_VAPID_KEY = ''; // ex: 'BNxxxx...'
+
 const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
 
@@ -58,48 +67,16 @@ let usuarioAtualData = null;
    BANCO DE DADOS DE OBRAS PARA PESQUISA
    ========================================================= */
 
-const listaObrasCompleta = [
-    {
-        titulo: "Solo Leveling",
-        views: "3.9M"
-    },
-    {
-        titulo: "Solo Leveling: Ragnarok",
-        views: "4.5M"
-    },
-    {
-        titulo: "Solo Max-Level Newbie",
-        views: "2.3M"
-    },
-    {
-        titulo: "Omniscient Reader's Viewpoint",
-        views: "3.5M"
-    },
-    {
-        titulo: "Tower of God",
-        views: "4.2M"
-    },
-    {
-        titulo: "Nano Machine",
-        views: "3.1M"
-    },
-    {
-        titulo: "The Beginning After The End",
-        views: "2.8M"
-    },
-    {
-        titulo: "Ranker Who Lives A Second Time",
-        views: "2.4M"
-    },
-    {
-        titulo: "The Great Mage Returns After 4000 Years",
-        views: "1.7M"
-    },
-    {
-        titulo: "Mercenary Enrollment",
-        views: "1.5M"
-    }
-];
+// Lista dinâmica — só obras do Firestore (sem exemplos)
+let listaObrasCompleta = [];
+
+function sincronizarListaPesquisa() {
+    listaObrasCompleta = obterTodasObras().map(o => ({
+        titulo: o.titulo,
+        views: o.views || '0'
+    }));
+}
+
 
 
 /* =========================================================
@@ -134,6 +111,22 @@ window.toggleMenu = function() {
 };
 
 
+
+/* Navegação com direção de animação */
+function trocarView(idTela, direcao) {
+    // direcao: 'forward' | 'back' | 'fade'
+    const views = document.querySelectorAll('.view');
+    views.forEach(v => {
+        v.classList.remove('ativo', 'nav-forward', 'nav-back', 'nav-fade');
+    });
+    const el = document.getElementById('view-' + idTela);
+    if (!el) return;
+    const cls = direcao === 'back' ? 'nav-back' : (direcao === 'forward' ? 'nav-forward' : 'nav-fade');
+    // reflow para reiniciar animação
+    void el.offsetWidth;
+    el.classList.add(cls, 'ativo');
+}
+
 window.mudarTela = function(idTela) {
 
     // Painel ADM é restrito
@@ -142,24 +135,40 @@ window.mudarTela = function(idTela) {
         return;
     }
 
-    const views = document.querySelectorAll('.view');
+    const atual = document.querySelector('.view.ativo');
+    const saindoDeChat = atual && atual.id === 'view-chat';
+    const saindoDeObra = atual && atual.id === 'view-obra';
+    const saindoDeLeitor = atual && atual.id === 'view-leitor';
+    let dir = 'fade';
+    if (idTela === 'chat' || idTela === 'obra' || idTela === 'leitor' || idTela === 'adm') dir = 'forward';
+    if (idTela === 'inicio' && (saindoDeChat || saindoDeObra || saindoDeLeitor)) dir = 'back';
+    if (idTela === 'biblioteca' || idTela === 'favoritos' || idTela === 'config' || idTela === 'suporte') dir = 'fade';
+    trocarView(idTela, dir);
 
-    views.forEach(v => {
-        v.classList.remove('ativo');
-    });
-
-    const telaSelecionada =
-        document.getElementById('view-' + idTela);
-
-    if (telaSelecionada) {
-        telaSelecionada.classList.add('ativo');
+    // Chat em tela cheia: trava scroll do body
+    document.body.classList.toggle('chat-aberto', idTela === 'chat');
+    if (idTela !== 'chat') {
+        document.documentElement.style.setProperty('--kb-offset', '0px');
+        pararAjusteTecladoChat();
     }
 
-    toggleMenu();
+    // Fecha menu se estiver aberto
+    const menu = document.getElementById('menu-lateral');
+    if (menu && menu.style.left === '0px') {
+        toggleMenu();
+    } else if (menu && (menu.style.left === '' || menu.style.left === '-280px')) {
+        // já fechado — só garante overlay
+        const overlay = document.getElementById('overlay');
+        if (overlay) {
+            overlay.style.opacity = '0';
+            overlay.style.visibility = 'hidden';
+        }
+    } else {
+        toggleMenu();
+    }
 
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Ações específicas de cada tela
     if (idTela === 'biblioteca') {
         generoFiltroAtivo = 'Todos';
         renderizarFiltrosGenero();
@@ -175,6 +184,15 @@ window.mudarTela = function(idTela) {
     }
     if (idTela === 'adm') {
         admTab('obras');
+    }
+    if (idTela === 'chat') {
+        iniciarChatComunidade();
+        iniciarAjusteTecladoChat();
+        // already forward via trocarView
+        setTimeout(() => {
+            const box = document.getElementById('chatMensagens');
+            if (box) box.scrollTop = box.scrollHeight;
+        }, 300);
     }
 };
 
@@ -809,7 +827,7 @@ window.processarCadastroFirebase = async function() {
 
             email: email,
 
-            obrasLidas: 1,
+            obrasLidas: 0,
 
             avatar: null
         };
@@ -901,7 +919,7 @@ window.processarLoginFirebase = async function() {
 
                 email: user.email,
 
-                obrasLidas: 1,
+                obrasLidas: 0,
 
                 avatar: null
             };
@@ -985,7 +1003,7 @@ window.fazerLoginGoogleFirebase = async function() {
 
                 email: user.email,
 
-                obrasLidas: 1,
+                obrasLidas: 0,
 
                 avatar: user.photoURL || null
             };
@@ -1006,10 +1024,16 @@ window.fazerLoginGoogleFirebase = async function() {
 
     } catch (error) {
 
-        alert(
-            "Erro ao logar com Google: " +
-            error.message
-        );
+        console.error('Google login:', error);
+        let msg = error.message || String(error);
+        if (error.code === 'auth/unauthorized-domain') {
+            msg = 'Domínio não autorizado. No Firebase Console → Authentication → Settings → Authorized domains, adicione: carlosandre1514-prog.github.io';
+        } else if (error.code === 'auth/popup-blocked') {
+            msg = 'Popup bloqueado. Permita popups neste site e tente de novo.';
+        } else if (error.code === 'auth/popup-closed-by-user') {
+            msg = 'Login cancelado.';
+        }
+        alert('Erro ao logar com Google: ' + msg);
     }
 };
 
@@ -1236,7 +1260,7 @@ async function carregarRankingLeitoresFirestore() {
                     "obrasLidas",
                     "desc"
                 ),
-                limit(10)
+                limit(50)
             );
 
 
@@ -1264,63 +1288,54 @@ async function carregarRankingLeitoresFirestore() {
 
         container.innerHTML = '';
 
-        let posicao = 1;
-
-
-        querySnapshot.forEach(
-            (docSnap) => {
-
-                const data =
-                    docSnap.data();
-
-
-                const card =
-                    document.createElement(
-                        'div'
-                    );
-
-
-                card.className =
-                    'ranking-card';
-
-
-                let avatarHTML =
-                    data.avatar
-                        ? `<img src="${data.avatar}">`
-                        : '👤';
-
-
-                card.innerHTML = `
-
-                    <div class="ranking-posicao">
-                        ${posicao}º
-                    </div>
-
-                    <div class="ranking-avatar">
-                        ${avatarHTML}
-                    </div>
-
-                    <div
-                        class="ranking-nick"
-                        title="${data.nick}"
-                    >
-                        ${data.nick}
-                    </div>
-
-                    <div class="ranking-obras">
-                        ${data.obrasLidas} obras
-                    </div>
-                `;
-
-
-                container.appendChild(
-                    card
-                );
-
-
-                posicao++;
+        // 1 e-mail = 1 pessoa no ranking (vários UIDs de teste com mesmo nick não repetem)
+        const porEmail = new Map();
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const lidas = Number(data.obrasLidas) || 0;
+            if (lidas < 1) return;
+            const emailKey = (data.email || docSnap.id || '').toString().toLowerCase().trim();
+            if (!emailKey) return;
+            const atual = porEmail.get(emailKey);
+            if (!atual || lidas > atual.obrasLidas) {
+                porEmail.set(emailKey, {
+                    uid: docSnap.id,
+                    nick: data.nick || 'Leitor',
+                    email: data.email || '',
+                    avatar: data.avatar || null,
+                    obrasLidas: lidas
+                });
             }
-        );
+        });
+        // Se vários e-mails tiverem o MESMO nick (contas de teste), fica só o de maior score
+        const porNick = new Map();
+        Array.from(porEmail.values()).forEach(u => {
+            const nk = (u.nick || '').toString().toLowerCase().trim() || u.uid;
+            const atual = porNick.get(nk);
+            if (!atual || u.obrasLidas > atual.obrasLidas) porNick.set(nk, u);
+        });
+        const leitores = Array.from(porNick.values()).sort((a, b) => b.obrasLidas - a.obrasLidas);
+
+        if (!leitores.length) {
+            container.innerHTML = `
+                <div style="font-size: 9px; color: var(--cinza-texto); padding: 10px;">
+                    Nenhum leitor no ranking ainda. Complete um capítulo para entrar.
+                </div>`;
+            return;
+        }
+
+        leitores.slice(0, 10).forEach((data, i) => {
+            const card = document.createElement('div');
+            card.className = 'ranking-card';
+            const avatarHTML = data.avatar ? `<img src="${data.avatar}">` : '👤';
+            card.innerHTML = `
+                <div class="ranking-posicao">${i + 1}º</div>
+                <div class="ranking-avatar">${avatarHTML}</div>
+                <div class="ranking-nick" title="${data.nick || ''}">${data.nick || 'Leitor'}</div>
+                <div class="ranking-obras">${data.obrasLidas} obra${data.obrasLidas === 1 ? '' : 's'}</div>
+            `;
+            container.appendChild(card);
+        });
 
     } catch (e) {
 
@@ -1372,7 +1387,7 @@ onAuthStateChanged(
                     email:
                         user.email,
 
-                    obrasLidas: 1,
+                    obrasLidas: 0,
 
                     avatar: null
                 };
@@ -1567,134 +1582,8 @@ setInterval(atualizarSelosNew, 30000);
    TELA DE DETALHES DA OBRA (Sinopse + Gêneros + Capítulos)
    ========================================================= */
 
-const dadosObras = {
-    "Solo Leveling": {
-        titulo: "Solo Leveling",
-        status: "Concluído",
-        views: "5.8M",
-        generos: ["Ação", "Fantasia", "Aventura", "Sobrenatural"],
-        sinopse: "Há 10 anos, um portal conectando o mundo real a uma dimensão repleta de monstros se abriu. Desde então, alguns humanos despertaram poderes e passaram a ser conhecidos como Caçadores. Sung Jin-Woo, um caçador de ranking E (o mais baixo), é conhecido como o mais fraco da humanidade. Após um incidente quase fatal em uma dungeon, ele começa a subir de nível de forma única e se torna o caçador mais poderoso do mundo.",
-        capitulos: [
-            { num: 179, titulo: "O Fim de uma Era", data: "Concluído", novo: false, lido: true },
-            { num: 178, titulo: "O Monarca das Sombras", data: "Concluído", novo: false, lido: true },
-            { num: 177, titulo: "Batalha Final", data: "Concluído", novo: false, lido: false },
-            { num: 176, titulo: "O Último Portal", data: "Concluído", novo: false, lido: false },
-            { num: 175, titulo: "Reencontro", data: "Concluído", novo: false, lido: false },
-            { num: 174, titulo: "Poder Absoluto", data: "Concluído", novo: false, lido: false },
-            { num: 173, titulo: "A Verdade Revelada", data: "Concluído", novo: false, lido: false },
-            { num: 172, titulo: "O Sistema", data: "Concluído", novo: false, lido: false }
-        ]
-    },
-    "Solo Leveling: Ragnarok": {
-        titulo: "Solo Leveling: Ragnarok",
-        status: "Ativo",
-        views: "4.5M",
-        generos: ["Ação", "Fantasia", "Aventura"],
-        sinopse: "Após os eventos de Solo Leveling, o mundo enfrenta uma nova ameaça. Sung Suho, filho de Jin-Woo, herda o poder do Monarca das Sombras e precisa proteger a Terra de uma nova onda de portais e monstros em uma era pós-apocalíptica.",
-        capitulos: [
-            { num: 45, titulo: "O Novo Monarca", data: "Hoje", novo: true, lido: false },
-            { num: 44, titulo: "Sombra do Passado", data: "Ontem", novo: true, lido: false },
-            { num: 43, titulo: "Primeiro Portal", data: "2d", novo: false, lido: false },
-            { num: 42, titulo: "Despertar", data: "3d", novo: false, lido: false },
-            { num: 41, titulo: "Herança", data: "4d", novo: false, lido: false },
-            { num: 40, titulo: "O Filho do Caçador", data: "5d", novo: false, lido: false }
-        ]
-    },
-    "Omniscient Reader": {
-        titulo: "Omniscient Reader's Viewpoint",
-        status: "Ativo",
-        views: "4.9M",
-        generos: ["Ação", "Fantasia", "Drama", "Apocalipse"],
-        sinopse: "Kim Dokja é o único leitor de uma webnovel obscura chamada 'Três Maneiras de Sobreviver em um Mundo Arruinado'. Quando o mundo real se transforma na história da novel, Dokja se torna o único que conhece o final. Com seu conhecimento, ele tenta sobreviver e mudar o destino de todos.",
-        capitulos: [
-            { num: 215, titulo: "O Leitor Onisciente", data: "Hoje", novo: true, lido: false },
-            { num: 214, titulo: "Cenário 50", data: "Ontem", novo: true, lido: false },
-            { num: 213, titulo: "Companheiros", data: "2d", novo: false, lido: false },
-            { num: 212, titulo: "O Fim do Mundo", data: "3d", novo: false, lido: false },
-            { num: 211, titulo: "Estrela da História", data: "4d", novo: false, lido: false }
-        ]
-    },
-    "Omniscient Reader's Viewpoint": {
-        titulo: "Omniscient Reader's Viewpoint",
-        status: "Ativo",
-        views: "4.9M",
-        generos: ["Ação", "Fantasia", "Drama", "Apocalipse"],
-        sinopse: "Kim Dokja é o único leitor de uma webnovel obscura chamada 'Três Maneiras de Sobreviver em um Mundo Arruinado'. Quando o mundo real se transforma na história da novel, Dokja se torna o único que conhece o final. Com seu conhecimento, ele tenta sobreviver e mudar o destino de todos.",
-        capitulos: [
-            { num: 215, titulo: "O Leitor Onisciente", data: "Hoje", novo: true, lido: false },
-            { num: 214, titulo: "Cenário 50", data: "Ontem", novo: true, lido: false },
-            { num: 213, titulo: "Companheiros", data: "2d", novo: false, lido: false },
-            { num: 212, titulo: "O Fim do Mundo", data: "3d", novo: false, lido: false }
-        ]
-    },
-    "Tower of God": {
-        titulo: "Tower of God",
-        status: "Ativo",
-        views: "4.2M",
-        generos: ["Ação", "Aventura", "Fantasia", "Mistério"],
-        sinopse: "A Torre de Deus é um lugar misterioso onde quem chega ao topo tem todos os desejos concedidos. Bam, um menino que viveu sua vida na escuridão, entra na Torre para encontrar sua amiga Rachel. Dentro da Torre, ele enfrenta testes mortais e descobre segredos sobre sua própria existência.",
-        capitulos: [
-            { num: 590, titulo: "O Rei da Torre", data: "Hoje", novo: true, lido: false },
-            { num: 589, titulo: "Batalha no Andar 50", data: "Ontem", novo: false, lido: false },
-            { num: 588, titulo: "Revelações", data: "2d", novo: false, lido: false },
-            { num: 587, titulo: "O Irregular", data: "3d", novo: false, lido: false },
-            { num: 586, titulo: "Companheiros de Equipe", data: "4d", novo: false, lido: false }
-        ]
-    },
-    "Nano Machine": {
-        titulo: "Nano Machine",
-        status: "Ativo",
-        views: "3.7M",
-        generos: ["Ação", "Artes Marciais", "Fantasia", "Reencarnação"],
-        sinopse: "Cheon Yeo-woon é um membro desprezado do clã Cheon. Após ser traído e morto, ele reencarna no passado com uma nanomáquina avançada em seu corpo. Agora, com o poder da tecnologia do futuro, ele busca vingança e se torna o líder mais poderoso do mundo marcial.",
-        capitulos: [
-            { num: 210, titulo: "O Senhor do Clã", data: "Hoje", novo: true, lido: false },
-            { num: 209, titulo: "Nanomáquina Ativada", data: "Ontem", novo: true, lido: false },
-            { num: 208, titulo: "Vingança", data: "2d", novo: false, lido: false },
-            { num: 207, titulo: "Treinamento Secreto", data: "3d", novo: false, lido: false },
-            { num: 206, titulo: "O Traidor", data: "4d", novo: false, lido: false }
-        ]
-    },
-    "The Beginning After The End": {
-        titulo: "The Beginning After The End",
-        status: "Ativo",
-        views: "2.8M",
-        generos: ["Ação", "Fantasia", "Aventura", "Reencarnação"],
-        sinopse: "Rei Grey, o monarca mais poderoso do continente, é assassinado e reencarna em um novo mundo como Arthur Leywin. Com as memórias de sua vida anterior, ele busca uma vida diferente, mas o destino o puxa novamente para o centro de conflitos épicos e guerras entre raças.",
-        capitulos: [
-            { num: 185, titulo: "O Novo Rei", data: "Hoje", novo: true, lido: false },
-            { num: 184, titulo: "Treinamento no Continente", data: "Ontem", novo: false, lido: false },
-            { num: 183, titulo: "Ameaças Antigas", data: "2d", novo: false, lido: false },
-            { num: 182, titulo: "Poder Despertado", data: "3d", novo: false, lido: false }
-        ]
-    },
-    "Mercenary Enrollment": {
-        titulo: "Mercenary Enrollment",
-        status: "Ativo",
-        views: "1.5M",
-        generos: ["Ação", "Escolar", "Drama", "Comédia"],
-        sinopse: "Ijin Yu cresceu em um campo de batalha como mercenário desde criança. Após ser resgatado e adotado, ele tenta viver uma vida normal no ensino médio. Porém, seu passado e suas habilidades mortais continuam o perseguindo, enquanto ele protege sua nova família e amigos.",
-        capitulos: [
-            { num: 180, titulo: "Vida Escolar", data: "Hoje", novo: true, lido: false },
-            { num: 179, titulo: "Ameaça Antiga", data: "Ontem", novo: false, lido: false },
-            { num: 178, titulo: "Proteção", data: "2d", novo: false, lido: false },
-            { num: 177, titulo: "O Passado Retorna", data: "3d", novo: false, lido: false }
-        ]
-    },
-    "Ranker Who Lives A Second Time": {
-        titulo: "Ranker Who Lives A Second Time",
-        status: "Ativo",
-        views: "2.4M",
-        generos: ["Ação", "Fantasia", "Aventura", "Reencarnação"],
-        sinopse: "Yeon-woo, após descobrir a morte do irmão gêmeo dentro da Torre de Obelisco, decide subir a Torre para descobrir a verdade e se vingar. Com o diário do irmão em mãos, ele recomeça a jornada com conhecimento privilegiado e se torna um Ranker lendário.",
-        capitulos: [
-            { num: 195, titulo: "O Ranker", data: "Hoje", novo: true, lido: false },
-            { num: 194, titulo: "Vingança", data: "Ontem", novo: false, lido: false },
-            { num: 193, titulo: "Segredos da Torre", data: "2d", novo: false, lido: false },
-            { num: 192, titulo: "O Diário", data: "3d", novo: false, lido: false }
-        ]
-    }
-};
+const dadosObras = {};
+// Todas as obras vêm do Firestore via carregarObrasFirestore()
 
 let obraAtualFavoritada = false;
 
@@ -1734,10 +1623,12 @@ window.abrirObra = function(nomeObra) {
             atualizarListaCapitulos(obra);
         }
 
-        // Capa grande
+        // Capa grande (mesma lógica: capas/{slug}/qualquer imagem)
         const capaEl = document.getElementById('obraCapaGrande');
         if (capaEl) {
-            capaEl.innerHTML = htmlCapa(nomeObra);
+            const tituloCapa = obra ? obra.titulo : nomeObra;
+            capaEl.innerHTML = htmlCapa(tituloCapa);
+            setTimeout(aplicarCapasGithub, 150);
         }
 
         // Estado do botão favoritar
@@ -1783,19 +1674,18 @@ window.abrirObra = function(nomeObra) {
             };
         }
 
-        // Muda para a tela da obra
-        const views = document.querySelectorAll('.view');
-        views.forEach(v => v.classList.remove('ativo'));
-        document.getElementById('view-obra').classList.add('ativo');
-        window.scrollTo(0, 0);
+        // Muda para a tela da obra (animação avançar)
+        trocarView('obra', 'forward');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 };
 
 window.voltarParaInicio = function() {
-    const views = document.querySelectorAll('.view');
-    views.forEach(v => v.classList.remove('ativo'));
-    document.getElementById('view-inicio').classList.add('ativo');
-    window.scrollTo(0, 0);
+    document.body.classList.remove('chat-aberto');
+    document.documentElement.style.setProperty('--kb-offset', '0px');
+    if (typeof pararAjusteTecladoChat === 'function') pararAjusteTecladoChat();
+    trocarView('inicio', 'back');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
 // Atualiza os cards existentes para abrirem a tela de detalhes
@@ -1811,25 +1701,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Também os botões do carrossel "Começar a ler" e "Ver descrição"
-    document.querySelectorAll('.btn-ler, .btn-desc').forEach(btn => {
-        const originalOnclick = btn.getAttribute('onclick');
-        if (originalOnclick && originalOnclick.includes('Solo Leveling: Ragnarok')) {
-            btn.setAttribute('onclick', "abrirObra('Solo Leveling: Ragnarok')");
-        } else if (originalOnclick && originalOnclick.includes('Omniscient Reader')) {
-            btn.setAttribute('onclick', "abrirObra('Omniscient Reader')");
-        } else if (originalOnclick && originalOnclick.includes('Tower of God')) {
-            btn.setAttribute('onclick', "abrirObra('Tower of God')");
-        } else if (originalOnclick && originalOnclick.includes('Nano Machine')) {
-            btn.setAttribute('onclick', "abrirObra('Nano Machine')");
-        } else if (originalOnclick && originalOnclick.includes('The Beginning After The End')) {
-            btn.setAttribute('onclick', "abrirObra('The Beginning After The End')");
-        } else if (originalOnclick && originalOnclick.includes('Mercenary Enrollment')) {
-            btn.setAttribute('onclick', "abrirObra('Mercenary Enrollment')");
-        } else if (originalOnclick && originalOnclick.includes('Ranker Who Lives A Second Time')) {
-            btn.setAttribute('onclick', "abrirObra('Ranker Who Lives A Second Time')");
-        }
-    });
+    // Carrossel é preenchido só com obras do Firestore (sem exemplos fixos)
 });
 
 
@@ -2001,19 +1873,86 @@ function slugify(titulo) {
 }
 
 function urlCapa(titulo) {
-    // Tenta: capas/solo-leveling.png
-    return `capas/${slugify(titulo)}.png`;
+    // placeholder; a capa real vem de capas/{slug}/ via GitHub API
+    return `capas/${slugify(titulo)}/capa.png`;
 }
 
 function htmlCapa(titulo, classeExtra = '') {
-    // Prioridade: URL do Firestore → capas/slug.png no GitHub → logo-capa.png
     const obra = (typeof dadosObras !== 'undefined' && (dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo)));
     if (obra && (obra.capaURL || obra.capaData) && String(obra.capaURL || obra.capaData).startsWith('http')) {
         return `<img src="${obra.capaURL || obra.capaData}" alt="${titulo}" class="${classeExtra}" onerror="this.onerror=null; this.src='logo-capa.png'; this.classList.add('capa-fallback');">`;
     }
-    // Caminho local no GitHub Pages: capas/solo-leveling.png
-    return `<img src="${urlCapa(titulo)}" alt="${titulo}" class="${classeExtra}" onerror="this.onerror=null; this.src='logo-capa.png'; this.classList.add('capa-fallback');">`;
+    const slug = slugify(titulo);
+    // Começa com logo; aplicarCapasGithub troca pela 1ª imagem de capas/{slug}/
+    return `<img src="logo-capa.png" data-slug="${slug}" data-capa="1" alt="${titulo}" class="${classeExtra} capa-fallback">`;
 }
+
+// Estrutura:
+//   capas/{slug-da-obra}/qualquer-imagem.webp  ← capa
+//   caps/{slug-da-obra}/{numero}/qualquer.webp ← páginas do capítulo (0, 00, 1, 2...)
+const _capaGithubCache = {};
+async function resolverCapaGithub(titulo) {
+    const GITHUB_OWNER = window.GITHUB_OWNER || 'carlosandre1514-prog';
+    const GITHUB_REPO = window.GITHUB_REPO || 'manhwa-toons';
+    const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
+    const slug = slugify(titulo);
+    if (_capaGithubCache[slug]) return _capaGithubCache[slug];
+    try {
+        // Principal: pasta capas/{slug}/ — qualquer imagem dentro
+        const urlSub = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/capas/${slug}?ref=${GITHUB_BRANCH}`;
+        const res2 = await fetch(urlSub);
+        if (res2.ok) {
+            const data2 = await res2.json();
+            if (Array.isArray(data2)) {
+                const imgs = data2
+                    .filter(f => f.type === 'file' && /\.(png|jpe?g|webp|gif|bmp|avif|jfif|heic|heif)$/i.test(f.name))
+                    .map(f => ({ url: f.download_url, name: f.name }))
+                    .filter(x => x.url);
+                imgs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                if (imgs[0]) {
+                    _capaGithubCache[slug] = imgs[0].url;
+                    return imgs[0].url;
+                }
+            }
+        }
+        // Compatibilidade: arquivo solto capas/slug.png (etc.)
+        const urlDir = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/capas?ref=${GITHUB_BRANCH}`;
+        const res = await fetch(urlDir);
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                const match = data
+                    .filter(f => f.type === 'file' && /\.(png|jpe?g|webp|gif|bmp|avif|jfif|heic|heif)$/i.test(f.name))
+                    .find(f => {
+                        const base = f.name.replace(/\.[^.]+$/, '').toLowerCase();
+                        return base === slug || base.startsWith(slug + '-') || base.startsWith(slug + '_');
+                    });
+                if (match && match.download_url) {
+                    _capaGithubCache[slug] = match.download_url;
+                    return match.download_url;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('capa github', e);
+    }
+    return null;
+}
+
+async function aplicarCapasGithub() {
+    const imgs = document.querySelectorAll('img[data-slug][data-capa]');
+    for (const img of imgs) {
+        if (img.dataset.ghDone) continue;
+        const url = await resolverCapaGithub(img.dataset.slug);
+        img.dataset.ghDone = '1';
+        if (url) {
+            img.classList.remove('capa-fallback');
+            img.onerror = function() { this.onerror = null; this.src = 'logo-capa.png'; this.classList.add('capa-fallback'); };
+            img.src = url;
+        }
+    }
+}
+
 
 
 /* =========================================================
@@ -2049,12 +1988,25 @@ function registrarLeitura(titulo, numCapitulo) {
 }
 
 function getProgresso(titulo) {
-    const obra = dadosObras[titulo] || Object.values(dadosObras).find(o => o.titulo === titulo);
+    const obra = dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo);
     const total = obra && obra.capitulos ? obra.capitulos.length : 0;
     const hist = carregarHistorico()[titulo];
-    const lidos = hist ? hist.capitulosLidos.length : 0;
+    const lidos = hist ? (hist.capitulosLidos || []).length : 0;
     const ultimo = hist ? hist.ultimo : null;
-    return { total, lidos, ultimo, pct: total ? Math.round((lidos / total) * 100) : 0 };
+    let pct = 0;
+    if (total > 0 && hist && hist.progresso) {
+        // soma o % de cada capítulo (completo = 100)
+        let soma = 0;
+        const nums = (obra.capitulos || []).map(c => c.num);
+        nums.forEach(n => {
+            if ((hist.capitulosLidos || []).includes(n)) soma += 100;
+            else if (hist.progresso[n] != null) soma += hist.progresso[n];
+        });
+        pct = Math.min(100, Math.round(soma / total));
+    } else if (total > 0) {
+        pct = Math.round((lidos / total) * 100);
+    }
+    return { total, lidos, ultimo, pct };
 }
 
 
@@ -2068,13 +2020,28 @@ window.renderizarContinuarLendo = function() {
     if (!secao || !scroll) return;
 
     const hist = carregarHistorico();
+    // Apaga do histórico qualquer obra que NÃO está no catálogo Firestore
+    let mudou = false;
+    Object.keys(hist).forEach(titulo => {
+        const existe = dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo);
+        if (!existe) {
+            delete hist[titulo];
+            mudou = true;
+        }
+    });
+    if (mudou) salvarHistorico(hist);
+
     const itens = Object.entries(hist)
-        .filter(([, v]) => v.ultimo != null)
+        .filter(([titulo, v]) => {
+            if (v.ultimo == null) return false;
+            return !!(dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo));
+        })
         .sort((a, b) => (b[1].atualizado || 0) - (a[1].atualizado || 0))
         .slice(0, 10);
 
     if (itens.length === 0) {
         secao.style.display = 'none';
+        scroll.innerHTML = '';
         return;
     }
 
@@ -2082,16 +2049,11 @@ window.renderizarContinuarLendo = function() {
     scroll.innerHTML = '';
 
     itens.forEach(([titulo, info]) => {
-        const obra = dadosObras[titulo] || Object.values(dadosObras).find(o => o.titulo === titulo);
         const card = document.createElement('div');
         card.className = 'manhwa-card';
         card.onclick = () => {
-            mostrarLoading(() => {
-                abrirObra(titulo);
-                // opcional: já abrir o último capítulo
-            });
+            mostrarLoading(() => abrirObra(titulo));
         };
-        const prog = getProgresso(titulo);
         card.innerHTML = `
             <div class="manhwa-capa">${htmlCapa(titulo)}</div>
             <div class="manhwa-info">
@@ -2099,16 +2061,13 @@ window.renderizarContinuarLendo = function() {
                 <div class="ultimos-caps">
                     <div class="cap-linha">
                         <span class="cap-numero">Cap. ${info.ultimo}</span>
-                        <span class="cap-data">${prog.pct}%</span>
                     </div>
-                </div>
-                <div class="progresso-barra-wrap">
-                    <div class="progresso-barra" style="width:${prog.pct}%"></div>
                 </div>
             </div>
         `;
         scroll.appendChild(card);
     });
+    setTimeout(aplicarCapasGithub, 200);
 };
 
 
@@ -2238,16 +2197,21 @@ window.abrirCapitulo = function(titulo, numero) {
         document.getElementById('btnCapAnterior').style.opacity = idx > 0 ? '1' : '0.35';
         document.getElementById('btnCapProximo').style.opacity = idx < leitorEstado.listaCaps.length - 1 ? '1' : '0.35';
 
-        const views = document.querySelectorAll('.view');
-        views.forEach(v => v.classList.remove('ativo'));
-        document.getElementById('view-leitor').classList.add('ativo');
-        window.scrollTo(0, 0);
+        trocarView('leitor', 'forward');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 };
 
 window.fecharLeitor = function() {
+    window.removeEventListener('scroll', window._leitorScrollHandler);
     if (leitorEstado.titulo) {
-        mostrarLoading(() => abrirObra(leitorEstado.titulo), 800);
+        // volta para a obra com animação "back" (sem loading longo)
+        const titulo = leitorEstado.titulo;
+        mostrarLoading(() => {
+            abrirObra(titulo);
+            // força direção back na view obra
+            setTimeout(() => trocarView('obra', 'back'), 30);
+        }, 500);
     } else {
         voltarParaInicio();
     }
@@ -2343,7 +2307,6 @@ window.criarCardObra = function(obra) {
     const card = document.createElement('div');
     card.className = 'manhwa-card';
     card.onclick = () => abrirObra(obra.titulo);
-    const prog = getProgresso(obra.titulo);
     card.innerHTML = `
         <div class="manhwa-capa">
             ${htmlCapa(obra.titulo)}
@@ -2357,7 +2320,6 @@ window.criarCardObra = function(obra) {
                     <span class="cap-data">${obra.generos[0] || ''}</span>
                 </div>
             </div>
-            ${prog.total ? `<div class="progresso-barra-wrap"><div class="progresso-barra" style="width:${prog.pct}%"></div></div>` : ''}
         </div>
     `;
     return card;
@@ -2406,6 +2368,282 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+
+/* =========================================================
+   GITHUB: listar páginas com QUALQUER nome de arquivo
+   ========================================================= */
+const GITHUB_OWNER = 'carlosandre1514-prog';
+const GITHUB_REPO = 'manhwa-toons';
+const GITHUB_BRANCH = 'main';
+window.GITHUB_OWNER = GITHUB_OWNER;
+window.GITHUB_REPO = GITHUB_REPO;
+window.GITHUB_BRANCH = GITHUB_BRANCH;
+
+async function listarPaginasGithub(slug, numCap) {
+    const path = `caps/${slug}/${numCap}`;
+    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_BRANCH}`;
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+        const imgs = data
+            .filter(f => f.type === 'file' && /\.(png|jpe?g|webp|gif|bmp|avif|jfif|heic|heif)$/i.test(f.name))
+            .map(f => f.download_url || f.name);
+        // ordena por nome natural (page1, page2, 01, 02, a, b...)
+        imgs.sort((a, b) => {
+            const na = (a.split('/').pop() || a);
+            const nb = (b.split('/').pop() || b);
+            return na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        return imgs;
+    } catch (e) {
+        console.warn('GitHub API:', e);
+        return [];
+    }
+}
+
+function parseViewsNumber(v) {
+    if (typeof v === 'number') return v;
+    if (!v) return 0;
+    const s = String(v).toUpperCase().replace(/[^0-9.KM]/g, '');
+    if (s.endsWith('M')) return parseFloat(s) * 1e6;
+    if (s.endsWith('K')) return parseFloat(s) * 1e3;
+    return parseFloat(s) || 0;
+}
+
+function formatViews(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(Math.floor(n));
+}
+
+window.renderizarRankingObras = function() {
+    const el = document.getElementById('rankingObrasScroll');
+    if (!el) return;
+    const obras = obterTodasObras().slice().sort((a, b) => parseViewsNumber(b.views) - parseViewsNumber(a.views));
+    if (!obras.length) {
+        el.innerHTML = '<div style="font-size:10px;color:var(--cinza-texto);padding:10px;">Nenhuma obra ainda.</div>';
+        return;
+    }
+    el.innerHTML = '';
+    obras.slice(0, 20).forEach((o, i) => {
+        const card = document.createElement('div');
+        card.className = 'manhwa-card';
+        card.onclick = () => abrirObra(o.titulo);
+        card.innerHTML = `
+            <div class="manhwa-capa">
+                ${htmlCapa(o.titulo)}
+                <span class="badge-views">👁️ ${o.views || '0'}</span>
+            </div>
+            <div class="manhwa-info">
+                <div class="manhwa-titulo">${o.titulo}</div>
+                <div class="ultimos-caps">
+                    <div class="cap-linha">
+                        <span class="cap-numero">Top ${i + 1}</span>
+                        <span class="cap-data">${o.status || ''}</span>
+                    </div>
+                </div>
+            </div>`;
+        el.appendChild(card);
+    });
+};
+
+window.renderizarMaisLidos = function() {
+    const el = document.getElementById('maisLidosScroll');
+    if (!el) return;
+    // Usa as mesmas obras por views (semana = ranking geral por enquanto)
+    const obras = obterTodasObras().slice().sort((a, b) => parseViewsNumber(b.views) - parseViewsNumber(a.views));
+    if (!obras.length) {
+        el.innerHTML = '<div style="font-size:10px;color:var(--cinza-texto);padding:10px;">Nenhuma obra ainda.</div>';
+        return;
+    }
+    el.innerHTML = '';
+    obras.slice(0, 6).forEach(o => {
+        const full = dadosObras[o.titulo] || o;
+        const caps = [...(full.capitulos || [])].sort((a, b) => b.num - a.num);
+        const c1 = caps[0];
+        const c2 = caps[1];
+        let capsHtml = '';
+        if (c1) capsHtml += `<div class="cap-linha"><span class="cap-numero">Cap. ${c1.num}</span><span class="cap-data">${c1.data || 'Novo'}</span></div>`;
+        if (c2) capsHtml += `<div class="cap-linha"><span class="cap-numero">Cap. ${c2.num}</span><span class="cap-data">${c2.data || '-'}</span></div>`;
+        if (!c1) capsHtml = `<div class="cap-linha"><span class="cap-numero">0 caps</span><span class="cap-data">Nova</span></div>`;
+        const card = document.createElement('div');
+        card.className = 'manhwa-card';
+        card.onclick = () => abrirObra(o.titulo);
+        card.innerHTML = `
+            <div class="manhwa-capa">${htmlCapa(o.titulo)}<span class="badge-views">👁️ ${o.views || '0'}</span></div>
+            <div class="manhwa-info">
+                <div class="manhwa-titulo">${o.titulo}</div>
+                <div class="ultimos-caps">${capsHtml}</div>
+            </div>`;
+        el.appendChild(card);
+    });
+};
+
+window.renderizarCarrossel = async function() {
+    const slider = document.getElementById('carouselSlider');
+    if (!slider) return;
+    let obras = obterTodasObras().filter(o => {
+        const full = dadosObras[o.titulo] || o;
+        return full.carrossel === true;
+    });
+    obras = obras.sort((a, b) => {
+        const da = (dadosObras[a.titulo] && dadosObras[a.titulo].atualizadoEm) || 0;
+        const db = (dadosObras[b.titulo] && dadosObras[b.titulo].atualizadoEm) || 0;
+        return db - da;
+    }).slice(0, 8);
+
+    if (!obras.length) {
+        slider.innerHTML = `<div class="carousel-slide" style="background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.4)), url('header-bg.png') center/cover;">
+            <div class="carousel-info"><h3>Manhwa Toons</h3><p>Marque obras em ADM → Destaques e envie o banner em carrossel/</p></div>
+        </div>`;
+        return;
+    }
+
+    const banners = await Promise.all(obras.map(o => resolverBannerCarrossel(o.titulo)));
+
+    slider.innerHTML = obras.map((o, i) => {
+        const full = dadosObras[o.titulo] || o;
+        const sin = (full.sinopse || '').slice(0, 90) + ((full.sinopse || '').length > 90 ? '...' : '');
+        const t = String(o.titulo).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const img = banners[i] || 'header-bg.png';
+        return `<div class="carousel-slide carousel-slide-capa" style="
+            background-color:#0d0d0d;
+            background-image: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.35) 45%, rgba(0,0,0,0.1) 100%), url('${img}');
+            background-size: auto, contain;
+            background-position: center, center top;
+            background-repeat: no-repeat;">
+            <div class="badge-new"><span class="badge-new-label">NEW</span><span class="badge-new-time">destaque</span></div>
+            <div class="carousel-info">
+                <h3>${o.titulo.toUpperCase()}</h3>
+                <p>${sin || 'Nova obra no catálogo.'}</p>
+                <div class="carousel-botoes">
+                    <button class="btn-ler" onclick="abrirObra('${t}')">Começar a ler</button>
+                    <button class="btn-desc" onclick="abrirObra('${t}')">Ver descrição</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+};
+
+const _bannerCache = {};
+async function resolverBannerCarrossel(titulo) {
+    const slug = slugify(titulo);
+    if (_bannerCache[slug]) return _bannerCache[slug];
+    const GITHUB_OWNER = window.GITHUB_OWNER || 'carlosandre1514-prog';
+    const GITHUB_REPO = window.GITHUB_REPO || 'manhwa-toons';
+    const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
+    try {
+        // pasta carrossel/ — arquivo que bata com o slug, ou qualquer imagem carrossel/slug.*
+        const urlDir = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/carrossel?ref=${GITHUB_BRANCH}`;
+        const res = await fetch(urlDir);
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                const imgs = data.filter(f => f.type === 'file' && /\\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(f.name));
+                const match = imgs.find(f => {
+                    const base = f.name.replace(/\\.[^.]+$/, '').toLowerCase();
+                    return base === slug || base.startsWith(slug);
+                });
+                if (match && match.download_url) {
+                    _bannerCache[slug] = match.download_url;
+                    return match.download_url;
+                }
+            }
+        }
+        // pasta carrossel/{slug}/
+        const urlSub = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/carrossel/${slug}?ref=${GITHUB_BRANCH}`;
+        const res2 = await fetch(urlSub);
+        if (res2.ok) {
+            const data2 = await res2.json();
+            if (Array.isArray(data2)) {
+                const imgs = data2
+                    .filter(f => f.type === 'file' && /\\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(f.name))
+                    .map(f => f.download_url)
+                    .filter(Boolean);
+                if (imgs[0]) {
+                    _bannerCache[slug] = imgs[0];
+                    return imgs[0];
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('banner carrossel', e);
+    }
+    return null;
+}
+
+/* Views só contam ao terminar o capítulo (scroll no fim) */
+async function registrarViewCompleta(titulo) {
+    const obra = dadosObras[titulo];
+    if (!obra || !obra._firebaseSlug) return;
+    const key = 'viewed_' + slugify(titulo) + '_' + (obra.capitulos || []).map(c => c.num).join('-');
+    // por capítulo na chamada abaixo
+}
+
+async function incrementarViewObra(titulo, numCap) {
+    // 1 view por USUÁRIO (ou dispositivo se não logado) por OBRA — só quem ainda não leu
+    const idLeitor = (usuarioAtualData && usuarioAtualData.uid)
+        ? usuarioAtualData.uid
+        : ('anon_' + (localStorage.getItem('mt_anon_id') || (localStorage.setItem('mt_anon_id', String(Date.now())+Math.random()), localStorage.getItem('mt_anon_id'))));
+    const flagObra = `mt_view_obra_${slugify(titulo)}_${idLeitor}`;
+    if (localStorage.getItem(flagObra)) return; // esse usuário já contou view nesta obra
+    localStorage.setItem(flagObra, '1');
+
+    const obra = dadosObras[titulo];
+    if (!obra || !obra._firebaseSlug) return;
+    try {
+        const n = parseViewsNumber(obra.views) + 1;
+        const viewsStr = formatViews(n);
+        await updateDoc(doc(db, 'obras', obra._firebaseSlug), { views: viewsStr });
+        obra.views = viewsStr;
+
+        // Ranking leitores: +1 quando completa um capítulo (por usuário logado)
+        if (usuarioAtualData && usuarioAtualData.uid) {
+            try {
+                const flagUser = `mt_user_cap_${usuarioAtualData.uid}_${slugify(titulo)}_${numCap}`;
+                if (!localStorage.getItem(flagUser)) {
+                    localStorage.setItem(flagUser, '1');
+                    const novo = (Number(usuarioAtualData.obrasLidas) || 0) + 1;
+                    usuarioAtualData.obrasLidas = novo;
+                    await updateDoc(doc(db, 'users', usuarioAtualData.uid), { obrasLidas: novo });
+                    carregarRankingLeitoresFirestore();
+                }
+            } catch (err) { console.warn('obrasLidas user', err); }
+        }
+
+        // Atualiza UI de views
+        const elViews = document.getElementById('obraViews');
+        if (elViews && document.getElementById('obraTitulo') &&
+            document.getElementById('obraTitulo').textContent.trim() === titulo) {
+            elViews.textContent = '👁️ ' + viewsStr;
+        }
+        sincronizarListaPesquisa();
+        renderizarRankingObras();
+        renderizarMaisLidos();
+        renderizarLancamentos();
+    } catch (e) {
+        console.warn('view:', e);
+        localStorage.removeItem(flagObra); // permite tentar de novo se falhou
+    }
+}
+
+function salvarProgressoScroll(titulo, numCap, pct) {
+    const hist = carregarHistorico();
+    if (!hist[titulo]) hist[titulo] = { capitulosLidos: [], ultimo: null, atualizado: null, progresso: {} };
+    if (!hist[titulo].progresso) hist[titulo].progresso = {};
+    const prev = hist[titulo].progresso[numCap] || 0;
+    hist[titulo].progresso[numCap] = Math.max(prev, Math.min(100, Math.round(pct)));
+    hist[titulo].ultimo = numCap;
+    hist[titulo].atualizado = Date.now();
+    if (pct >= 92 && !hist[titulo].capitulosLidos.includes(numCap)) {
+        hist[titulo].capitulosLidos.push(numCap);
+    }
+    salvarHistorico(hist);
+}
+
+
 /* =========================================================
    PAINEL ADM + SUPORTE — Firestore (dados) + GitHub (imagens)
    =========================================================
@@ -2452,12 +2690,18 @@ async function carregarObrasFirestore() {
                     capaURL: data.capaURL || null,
                     capaData: data.capaURL || null,
                     atualizadoEm: data.atualizadoEm || 0,
+                    carrossel: data.carrossel === true,
                     _firebaseSlug: docSnap.id
                 };
             }
         });
         console.log('[ADM] Obras Firestore:', snap.size);
+        sincronizarListaPesquisa();
         renderizarLancamentos();
+        renderizarRankingObras();
+        renderizarMaisLidos();
+        renderizarCarrossel();
+        setTimeout(aplicarCapasGithub, 300);
     } catch (e) {
         console.warn('[ADM] Erro obras:', e.message);
     }
@@ -2526,6 +2770,8 @@ window.admTab = function(nome) {
         admPopularSelectObras();
         atualizarHintCapitulo();
     }
+    if (nome === 'destaques') admRenderDestaques();
+    if (nome === 'avisos') {}
     if (nome === 'tickets') admRenderTickets();
     if (nome === 'usuarios') admRenderUsuarios();
 };
@@ -2533,14 +2779,14 @@ window.admTab = function(nome) {
 function atualizarHintObra() {
     const titulo = (document.getElementById('admObraTitulo') || {}).value || 'nome-da-obra';
     const el = document.getElementById('admObraCapaPath');
-    if (el) el.textContent = `capas/${slugify(titulo.trim() || 'nome-da-obra')}.png`;
+    if (el) el.textContent = `capas/${slugify(titulo.trim() || 'nome-da-obra')}/  (qualquer imagem dentro)`;
 }
 
 function atualizarHintCapitulo() {
     const titulo = (document.getElementById('admCapObra') || {}).value || 'nome-da-obra';
     const num = (document.getElementById('admCapNumero') || {}).value || 'NUMERO';
     const el = document.getElementById('admCapPathHint');
-    if (el) el.textContent = `caps/${slugify(titulo)}/${num}/01.png, 02.png, 03.png...`;
+    if (el) el.textContent = `caps/${slugify(titulo)}/${num}/  (pasta do capítulo: 0, 00, 1... + qualquer imagem)`;
 }
 
 document.addEventListener('input', (e) => {
@@ -2581,7 +2827,7 @@ window.admSalvarObra = async function() {
         }
 
         // capaURL aponta para o arquivo no próprio site (GitHub Pages)
-        const capaURL = `capas/${slug}.png`;
+        const capaURL = `capas/${slug}/`;
 
         const obraData = {
             titulo,
@@ -2603,7 +2849,7 @@ window.admSalvarObra = async function() {
             _firebaseSlug: slug
         };
 
-        msg.innerHTML = `Obra salva!<br>Agora no GitHub suba a capa em:<br><code style="color:#39FF14">capas/${slug}.png</code>`;
+        msg.innerHTML = `Obra salva!<br>No GitHub crie a pasta e coloque a capa:<br><code style="color:#39FF14">capas/${slug}/qualquer-imagem.webp</code>`;
         msg.style.display = 'block';
         document.getElementById('admObraTitulo').value = '';
         document.getElementById('admObraSinopse').value = '';
@@ -2762,7 +3008,7 @@ window.admSalvarCapitulo = async function() {
             _firebaseSlug: slug
         };
 
-        msg.innerHTML = `Capítulo ${num} salvo!<br>Suba as páginas no GitHub em:<br><code style="color:#39FF14">caps/${slug}/${num}/01.png</code><br><code style="color:#39FF14">caps/${slug}/${num}/02.png</code><br>...`;
+        msg.innerHTML = `Capítulo ${num} salvo!<br>No GitHub:<br><code style="color:#39FF14">caps/${slug}/${num}/</code><br>Qualquer imagem dentro (webp, png, jpg...). Capítulos 0 ou 00 também valem.`;
         msg.style.display = 'block';
         document.getElementById('admCapNumero').value = '';
         document.getElementById('admCapTitulo').value = '';
@@ -2781,17 +3027,8 @@ window.admSalvarCapitulo = async function() {
 const _abrirCapAntes = window.abrirCapitulo;
 window.abrirCapitulo = function(titulo, numero) {
     const obra = dadosObras[titulo] || Object.values(dadosObras).find(o => o && o.titulo === titulo);
-    const cap = obra && obra.capitulos ? obra.capitulos.find(c => c.num === numero) : null;
-    // se tiver paginasURLs http, usa; senão pasta local
-    const urlsHttp = cap && Array.isArray(cap.paginasURLs)
-        ? cap.paginasURLs.filter(u => String(u).startsWith('http'))
-        : [];
 
-    if (urlsHttp.length) {
-        if (typeof _abrirCapAntes === 'function') return _abrirCapAntes(titulo, numero);
-    }
-
-    mostrarLoading(() => {
+    mostrarLoading(async () => {
         leitorEstado.titulo = titulo;
         leitorEstado.numAtual = numero;
         leitorEstado.listaCaps = (obra && obra.capitulos ? obra.capitulos : []).map(c => c.num).sort((a, b) => a - b);
@@ -2800,84 +3037,298 @@ window.abrirCapitulo = function(titulo, numero) {
         const paginas = document.getElementById('leitorPaginas');
         paginas.innerHTML = '';
 
-        const maxTentativas = 40;
-        let carregadas = 0;
-        let falhasSeguidas = 0;
+        const slug = slugify(titulo);
+        // 1) Tenta GitHub API (qualquer nome de arquivo)
+        let urls = await listarPaginasGithub(slug, numero);
 
-        function tentar(n) {
-            if (n > maxTentativas || falhasSeguidas >= 2) {
-                if (carregadas === 0) {
-                    const div = document.createElement('div');
-                    div.className = 'leitor-pagina';
-                    div.innerHTML = `
-                        <img src="logo-capa.png" style="max-width:120px;opacity:0.5" onerror="this.style.display='none'">
-                        <div style="color:var(--verde-neon);font-family:Orbitron,sans-serif;">Cap. ${numero}</div>
-                        <div style="font-size:10px;text-align:center;max-width:260px;line-height:1.4;">
-                            Nenhuma página encontrada.<br>
-                            Suba no GitHub:<br>
-                            <code style="color:#39FF14">caps/${slugify(titulo)}/${numero}/01.png</code>
-                        </div>`;
-                    paginas.appendChild(div);
-                }
-                return;
+        // 2) Fallback: tenta 01.png, 02.png... se API falhar/vazia
+        if (!urls.length) {
+            const localUrls = [];
+            for (let n = 1; n <= 40; n++) {
+                const pag = String(n).padStart(2, '0');
+                localUrls.push(`caps/${slug}/${numero}/${pag}.png`);
             }
-            const pag = String(n).padStart(2, '0');
-            const src = `caps/${slugify(titulo)}/${numero}/${pag}.png`;
-            const img = new Image();
-            img.onload = () => {
-                falhasSeguidas = 0;
-                carregadas++;
+            // carrega até 2 falhas seguidas
+            let fails = 0;
+            for (const src of localUrls) {
+                if (fails >= 2) break;
+                const ok = await new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = () => resolve(true);
+                    img.onerror = () => resolve(false);
+                    img.src = src;
+                });
+                if (ok) { urls.push(src); fails = 0; }
+                else fails++;
+            }
+        }
+
+        if (!urls.length) {
+            const div = document.createElement('div');
+            div.className = 'leitor-pagina';
+            div.innerHTML = `
+                <img src="logo-capa.png" style="max-width:120px;opacity:0.5" onerror="this.style.display='none'">
+                <div style="color:var(--verde-neon);font-family:Orbitron,sans-serif;">Cap. ${numero}</div>
+                <div style="font-size:10px;text-align:center;max-width:280px;line-height:1.45;">
+                    Nenhuma página encontrada.<br>
+                    No GitHub, coloque as imagens em:<br>
+                    <code style="color:#39FF14">caps/${slug}/${numero}/</code><br>
+                    (qualquer nome: pagina1.png, a.jpg, 01.png...)
+                </div>`;
+            paginas.appendChild(div);
+        } else {
+            urls.forEach((src, i) => {
                 const div = document.createElement('div');
                 div.className = 'leitor-pagina';
                 div.style.minHeight = 'auto';
                 div.style.padding = '0';
                 div.style.border = 'none';
                 div.style.background = 'transparent';
-                div.innerHTML = `<img src="${src}" alt="Página ${n}" style="width:100%;height:auto;display:block;">`;
+                div.innerHTML = `<img src="${src}" alt="Página ${i + 1}" style="width:100%;height:auto;display:block;" loading="lazy">`;
                 paginas.appendChild(div);
-                tentar(n + 1);
-            };
-            img.onerror = () => {
-                // tenta também .jpg
-                const srcJpg = `caps/${slugify(titulo)}/${numero}/${pag}.jpg`;
-                const img2 = new Image();
-                img2.onload = () => {
-                    falhasSeguidas = 0;
-                    carregadas++;
-                    const div = document.createElement('div');
-                    div.className = 'leitor-pagina';
-                    div.style.minHeight = 'auto';
-                    div.style.padding = '0';
-                    div.style.border = 'none';
-                    div.style.background = 'transparent';
-                    div.innerHTML = `<img src="${srcJpg}" alt="Página ${n}" style="width:100%;height:auto;display:block;">`;
-                    paginas.appendChild(div);
-                    tentar(n + 1);
-                };
-                img2.onerror = () => {
-                    falhasSeguidas++;
-                    tentar(n + 1);
-                };
-                img2.src = srcJpg;
-            };
-            img.src = src;
+            });
         }
-        tentar(1);
 
         registrarLeitura(titulo, numero);
-        renderizarContinuarLendo();
+
+        // Progresso por scroll + view só no final
+        let viewRegistrada = false;
+        const onScroll = () => {
+            const doc = document.documentElement;
+            const scrollTop = window.scrollY || doc.scrollTop;
+            const height = doc.scrollHeight - doc.clientHeight;
+            const pct = height > 0 ? (scrollTop / height) * 100 : 0;
+            salvarProgressoScroll(titulo, numero, pct);
+            if (pct >= 92 && !viewRegistrada) {
+                viewRegistrada = true;
+                incrementarViewObra(titulo, numero);
+            }
+            renderizarContinuarLendo();
+        };
+        window.removeEventListener('scroll', window._leitorScrollHandler);
+        window._leitorScrollHandler = onScroll;
+        window.addEventListener('scroll', onScroll, { passive: true });
+
+        // restaura posição aproximada se já tinha progresso
+        const hist = carregarHistorico()[titulo];
+        const pctSalvo = hist && hist.progresso ? hist.progresso[numero] : 0;
+        setTimeout(() => {
+            if (pctSalvo > 5 && pctSalvo < 95) {
+                const doc = document.documentElement;
+                const height = doc.scrollHeight - doc.clientHeight;
+                window.scrollTo(0, (pctSalvo / 100) * height);
+            }
+        }, 400);
 
         const idx = leitorEstado.listaCaps.indexOf(numero);
         document.getElementById('btnCapAnterior').style.opacity = idx > 0 ? '1' : '0.35';
         document.getElementById('btnCapProximo').style.opacity = idx < leitorEstado.listaCaps.length - 1 ? '1' : '0.35';
 
-        document.querySelectorAll('.view').forEach(v => v.classList.remove('ativo'));
-        document.getElementById('view-leitor').classList.add('ativo');
-        window.scrollTo(0, 0);
+        trocarView('leitor', 'forward');
+        if (!(pctSalvo > 5)) window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 900);
+};
+
+
+/* ----- Tickets ----- */
+
+window.admRenderDestaques = function() {
+    const box = document.getElementById('admListaDestaques');
+    if (!box) return;
+    const obras = obterTodasObras();
+    if (!obras.length) {
+        box.innerHTML = '<div class="conteudo-placeholder">Nenhuma obra cadastrada.</div>';
+        return;
+    }
+    box.innerHTML = obras.map(o => {
+        const full = dadosObras[o.titulo] || {};
+        const on = full.carrossel === true;
+        const slug = full._firebaseSlug || slugify(o.titulo);
+        const t = String(o.titulo).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return `<div class="adm-item">
+            <div class="adm-item-titulo">${o.titulo}</div>
+            <div class="adm-item-meta">
+                Carrossel: ${on ? '✅ ATIVO' : 'não'} · Views: ${o.views || 0}<br>
+                Banner: <code style="color:#39FF14">carrossel/${slug}.webp</code>
+            </div>
+            <div class="adm-item-acoes">
+                <button onclick="admToggleCarrossel('${slug}', '${t}', ${on ? 'false' : 'true'})">
+                    ${on ? '🗑 Remover do carrossel' : '➕ Colocar no carrossel'}
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+};
+
+window.admToggleCarrossel = async function(slug, titulo, valor) {
+    try {
+        const on = valor === true || valor === 'true';
+        await updateDoc(doc(db, 'obras', slug), { carrossel: on });
+        if (dadosObras[titulo]) dadosObras[titulo].carrossel = on;
+        admRenderDestaques();
+        renderizarCarrossel();
+        if (on) {
+            alert('Ativado! No GitHub envie o banner:\\ncarrossel/' + slug + '.webp\\nIdeal: 1200×450 px');
+        }
+    } catch (e) {
+        alert('Erro: ' + (e.message || e));
+    }
+};
+
+/* =========================================================
+   CHAT DA COMUNIDADE — Firestore, some após 24h
+   ========================================================= */
+let _chatUnsub = null;
+const CHAT_TTL_MS = 24 * 60 * 60 * 1000;
+
+function formatChatHora(ts) {
+    try {
+        const d = ts && ts.toDate ? ts.toDate() : new Date(ts);
+        return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+        return '';
+    }
+}
+
+window.iniciarChatComunidade = function() {
+    const box = document.getElementById('chatMensagens');
+    if (!box) return;
+    if (_chatUnsub) {
+        try { _chatUnsub(); } catch (_) {}
+        _chatUnsub = null;
+    }
+
+    const col = collection(db, 'chat');
+    const q = query(col, orderBy('createdAt', 'desc'), limit(100));
+    const limite = Date.now() - CHAT_TTL_MS;
+
+    _chatUnsub = onSnapshot(q, async (snap) => {
+        const msgs = [];
+        const apagar = [];
+        snap.forEach(d => {
+            const m = d.data();
+            const t = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : (m.createdAtMs || 0);
+            if (t && t < limite) {
+                apagar.push(d.id);
+                return;
+            }
+            msgs.push({ id: d.id, ...m, _t: t });
+        });
+        apagar.slice(0, 15).forEach(id => {
+            deleteDoc(doc(db, 'chat', id)).catch(() => {});
+        });
+
+        msgs.sort((a, b) => (a._t || 0) - (b._t || 0));
+        if (!msgs.length) {
+            box.innerHTML = `<div class="chat-empty">
+                <div class="chat-empty-icon">◈</div>
+                <div>Canal silencioso nas últimas 24h.</div>
+                <div style="margin-top:6px;opacity:0.7;">Envie a primeira mensagem.</div>
+            </div>`;
+            return;
+        }
+        const noFundo = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+        box.innerHTML = msgs.map(m => {
+            const eu = usuarioAtualData && m.uid && m.uid === usuarioAtualData.uid;
+            const inicial = ((m.nick || '?')[0] || '?').toUpperCase();
+            return `<div class="chat-msg ${eu ? 'chat-msg-eu' : ''}">
+                <div class="chat-msg-nick">${eu ? 'Você' : escapeHtml(m.nick || 'Anônimo')}</div>
+                <div class="chat-msg-texto">${escapeHtml(m.texto || '')}</div>
+                <div class="chat-msg-hora">${formatChatHora(m.createdAt || m.createdAtMs)}</div>
+            </div>`;
+        }).join('');
+        if (noFundo) box.scrollTop = box.scrollHeight;
+    }, (err) => {
+        console.warn(err);
+        box.innerHTML = `<div class="chat-empty" style="color:#ff5555;">
+            Falha no canal: ${escapeHtml(err.message || String(err))}
+        </div>`;
     });
 };
 
-/* ----- Tickets ----- */
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+window.enviarChat = async function() {
+    const input = document.getElementById('chatInput');
+    const err = document.getElementById('chatErro');
+    if (err) {
+        err.textContent = '';
+        err.classList.remove('visivel');
+    }
+    const texto = (input && input.value || '').trim();
+    if (!texto) return;
+    if (!usuarioAtualData || !usuarioAtualData.uid) {
+        if (err) {
+            err.textContent = 'Faça login para enviar no canal.';
+            err.classList.add('visivel');
+        } else alert('Faça login para enviar mensagens.');
+        return;
+    }
+    try {
+        input.disabled = true;
+        await addDoc(collection(db, 'chat'), {
+            texto: texto.slice(0, 300),
+            nick: usuarioAtualData.nick || 'Leitor',
+            uid: usuarioAtualData.uid,
+            email: usuarioAtualData.email || '',
+            createdAtMs: Date.now(),
+            createdAt: new Date()
+        });
+        input.value = '';
+        setTimeout(() => {
+            const box = document.getElementById('chatMensagens');
+            if (box) box.scrollTop = box.scrollHeight;
+        }, 150);
+    } catch (e) {
+        console.error(e);
+        if (err) {
+            err.textContent = 'Erro ao enviar: ' + (e.message || e);
+            err.classList.add('visivel');
+        }
+    } finally {
+        if (input) {
+            input.disabled = false;
+            input.focus();
+        }
+    }
+};
+
+/* Teclado mobile: sobe o composer acima do teclado */
+let _kbHandler = null;
+function iniciarAjusteTecladoChat() {
+    pararAjusteTecladoChat();
+    const vv = window.visualViewport;
+    if (!vv) return;
+    _kbHandler = () => {
+        if (!document.body.classList.contains('chat-aberto')) return;
+        // diferença entre altura layout e viewport visível = teclado
+        const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        document.documentElement.style.setProperty('--kb-offset', offset + 'px');
+        const box = document.getElementById('chatMensagens');
+        if (box && offset > 40) {
+            box.scrollTop = box.scrollHeight;
+        }
+    };
+    vv.addEventListener('resize', _kbHandler);
+    vv.addEventListener('scroll', _kbHandler);
+    _kbHandler();
+}
+function pararAjusteTecladoChat() {
+    const vv = window.visualViewport;
+    if (vv && _kbHandler) {
+        vv.removeEventListener('resize', _kbHandler);
+        vv.removeEventListener('scroll', _kbHandler);
+    }
+    _kbHandler = null;
+    document.documentElement.style.setProperty('--kb-offset', '0px');
+}
+
 window.enviarTicketSuporte = async function() {
     const assunto = document.getElementById('ticketAssunto').value.trim();
     const mensagem = document.getElementById('ticketMensagem').value.trim();
@@ -3011,4 +3462,161 @@ document.addEventListener('DOMContentLoaded', () => {
         renderizarLancamentos();
     });
     setInterval(atualizarVisibilidadeMenuAdm, 4000);
+});
+
+
+/* =========================================================
+   NOTIFICAÇÕES (FCM + avisos em tempo real via Firestore)
+   ========================================================= */
+const CHAVE_NOTIF_OFF = 'mt_notif_pausado';
+
+async function initMessaging() {
+    try {
+        const ok = await isSupported();
+        if (!ok) {
+            atualizarStatusNotif('Neste navegador não há suporte a push.');
+            return;
+        }
+        messaging = getMessaging(app);
+        onMessage(messaging, (payload) => {
+            const title = (payload.notification && payload.notification.title) || 'Manhwa Toons';
+            const body = (payload.notification && payload.notification.body) || '';
+            mostrarNotificacaoLocal(title, body);
+        });
+        escutarAvisosFirestore();
+        atualizarStatusNotif();
+    } catch (e) {
+        console.warn('messaging', e);
+        escutarAvisosFirestore();
+        atualizarStatusNotif('Push avançado indisponível; avisos in-app ativos.');
+    }
+}
+
+function atualizarStatusNotif(extra) {
+    const el = document.getElementById('notifStatus');
+    if (!el) return;
+    if (localStorage.getItem(CHAVE_NOTIF_OFF) === '1') {
+        el.textContent = 'Status: pausado neste dispositivo' + (extra ? ' · ' + extra : '');
+        return;
+    }
+    if (typeof Notification === 'undefined') {
+        el.textContent = 'Status: navegador sem Notification API';
+        return;
+    }
+    el.textContent = 'Status: ' + Notification.permission + (extra ? ' · ' + extra : '');
+}
+
+window.ativarNotificacoes = async function() {
+    localStorage.removeItem(CHAVE_NOTIF_OFF);
+    if (typeof Notification === 'undefined') {
+        alert('Seu navegador não suporta notificações.');
+        return;
+    }
+    const perm = await Notification.requestPermission();
+    atualizarStatusNotif();
+    if (perm !== 'granted') {
+        alert('Permissão negada. Ative nas configurações do navegador.');
+        return;
+    }
+    mostrarNotificacaoLocal('Manhwa Toons', 'Notificações ativadas!');
+    if (!messaging) {
+        try { messaging = getMessaging(app); } catch (_) {}
+    }
+    if (messaging && FIREBASE_VAPID_KEY) {
+        try {
+            const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+            const token = await getToken(messaging, {
+                vapidKey: FIREBASE_VAPID_KEY,
+                serviceWorkerRegistration: reg
+            });
+            if (token && usuarioAtualData && usuarioAtualData.uid) {
+                await setDoc(doc(db, 'users', usuarioAtualData.uid), {
+                    fcmToken: token,
+                    fcmUpdatedAt: Date.now()
+                }, { merge: true });
+            }
+            atualizarStatusNotif('token salvo');
+        } catch (e) {
+            console.warn('getToken', e);
+            atualizarStatusNotif('permisão ok (configure VAPID no código para FCM completo)');
+        }
+    } else {
+        atualizarStatusNotif('ativo (avisos em tempo real)');
+        // registra SW mesmo sem VAPID para futuras msgs
+        try { await navigator.serviceWorker.register('./firebase-messaging-sw.js'); } catch (_) {}
+    }
+};
+
+window.desativarNotificacoesLocal = function() {
+    localStorage.setItem(CHAVE_NOTIF_OFF, '1');
+    atualizarStatusNotif();
+    alert('Notificações pausadas neste dispositivo.');
+};
+
+function mostrarNotificacaoLocal(titulo, corpo) {
+    if (localStorage.getItem(CHAVE_NOTIF_OFF) === '1') return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    try {
+        const n = new Notification(titulo, {
+            body: corpo,
+            icon: 'logo.png',
+            badge: 'logo.png'
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+    } catch (e) {
+        console.warn(e);
+    }
+}
+
+let _avisosUnsub = null;
+function escutarAvisosFirestore() {
+    if (_avisosUnsub) return;
+    const col = collection(db, 'avisos');
+    const q = query(col, orderBy('createdAt', 'desc'), limit(1));
+    let primeiro = true;
+    _avisosUnsub = onSnapshot(q, (snap) => {
+        if (primeiro) { primeiro = false; return; } // ignora snapshot inicial
+        snap.docChanges().forEach(change => {
+            if (change.type !== 'added') return;
+            const a = change.doc.data();
+            mostrarNotificacaoLocal(a.titulo || 'Manhwa Toons', a.texto || '');
+            // toast simples se app aberto
+            try {
+                if (a.titulo) console.log('[AVISO]', a.titulo, a.texto);
+            } catch (_) {}
+        });
+    }, (err) => console.warn('avisos', err));
+}
+
+window.admEnviarAviso = async function() {
+    const titulo = (document.getElementById('avisoTitulo') || {}).value || '';
+    const texto = (document.getElementById('avisoTexto') || {}).value || '';
+    const msg = document.getElementById('avisoMsg');
+    const err = document.getElementById('avisoErro');
+    if (msg) msg.style.display = 'none';
+    if (err) err.style.display = 'none';
+    if (!titulo.trim() || !texto.trim()) {
+        if (err) { err.textContent = 'Preencha título e mensagem.'; err.style.display = 'block'; }
+        return;
+    }
+    try {
+        await addDoc(collection(db, 'avisos'), {
+            titulo: titulo.trim().slice(0, 80),
+            texto: texto.trim().slice(0, 200),
+            createdAt: Date.now(),
+            por: usuarioAtualData ? usuarioAtualData.nick : 'ADM'
+        });
+        if (msg) { msg.textContent = 'Aviso enviado! Quem estiver com o app aberto recebe agora.'; msg.style.display = 'block'; }
+        document.getElementById('avisoTitulo').value = '';
+        document.getElementById('avisoTexto').value = '';
+        // mostra também no próprio ADM
+        mostrarNotificacaoLocal(titulo.trim(), texto.trim());
+    } catch (e) {
+        if (err) { err.textContent = 'Erro: ' + (e.message || e); err.style.display = 'block'; }
+    }
+};
+
+// inicia messaging após load
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initMessaging, 1200);
 });

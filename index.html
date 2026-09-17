@@ -51,6 +51,7 @@
             <li><a onclick="mudarTela('inicio')">🏠 Início</a></li>
             <li><a onclick="mudarTela('biblioteca')">📚 Biblioteca</a></li>
             <li><a onclick="mudarTela('favoritos')">⭐ Favoritos</a></li>
+            <li><a onclick="mudarTela('chat')">💬 Chat da Comunidade</a></li>
             <li><a onclick="mudarTela('suporte')">🛟 Suporte</a></li>
             <li id="menuItemAdm"><a onclick="mudarTela('adm')">🛠️ Painel ADM</a></li>
             <li><a onclick="mudarTela('config')">⚙️ Configurações</a></li>
@@ -99,119 +100,7 @@
 
             <div class="carousel-wrapper">
                 <div id="carouselSlider">
-
-                    <!-- OBRA 1 - lançado há 5 minutos -->
-                    <div class="carousel-slide" data-lancamento="">
-                        <div class="badge-new">
-                            <span class="badge-new-label">NEW</span>
-                            <span class="badge-new-time">--</span>
-                        </div>
-                        <div class="carousel-info">
-                            <h3>SOLO LEVELING: RAGNAROK</h3>
-                            <p>O retorno do monarca das sombras em uma nova era.</p>
-                            <div class="carousel-botoes">
-                                <button class="btn-ler" onclick="alert('Iniciando leitura de Solo Leveling: Ragnarok...')">Começar a ler</button>
-                                <button class="btn-desc" onclick="alert('Abrindo descrição de Solo Leveling: Ragnarok...')">Ver descrição</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OBRA 2 - lançado há 45 minutos -->
-                    <div class="carousel-slide" data-lancamento="">
-                        <div class="badge-new">
-                            <span class="badge-new-label">NEW</span>
-                            <span class="badge-new-time">--</span>
-                        </div>
-                        <div class="carousel-info">
-                            <h3>OMNISCIENT READER</h3>
-                            <p>Sobreviva a este mundo arruinado seguindo o roteiro.</p>
-                            <div class="carousel-botoes">
-                                <button class="btn-ler" onclick="alert('Iniciando leitura de Omniscient Reader...')">Começar a ler</button>
-                                <button class="btn-desc" onclick="alert('Abrindo descrição de Omniscient Reader...')">Ver descrição</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OBRA 3 - lançado há 3 horas -->
-                    <div class="carousel-slide" data-lancamento="">
-                        <div class="badge-new">
-                            <span class="badge-new-label">NEW</span>
-                            <span class="badge-new-time">--</span>
-                        </div>
-                        <div class="carousel-info">
-                            <h3>TOWER OF GOD</h3>
-                            <p>Suba a torre e todos os seus desejos serão concedidos.</p>
-                            <div class="carousel-botoes">
-                                <button class="btn-ler" onclick="alert('Iniciando leitura de Tower of God...')">Começar a ler</button>
-                                <button class="btn-desc" onclick="alert('Abrindo descrição de Tower of God...')">Ver descrição</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OBRA 4 - lançado há 12 horas -->
-                    <div class="carousel-slide" data-lancamento="">
-                        <div class="badge-new">
-                            <span class="badge-new-label">NEW</span>
-                            <span class="badge-new-time">--</span>
-                        </div>
-                        <div class="carousel-info">
-                            <h3>NANO MACHINE</h3>
-                            <p>Uma nova força surge em meio às disputas do mundo marcial.</p>
-                            <div class="carousel-botoes">
-                                <button class="btn-ler" onclick="alert('Iniciando leitura de Nano Machine...')">Começar a ler</button>
-                                <button class="btn-desc" onclick="alert('Abrindo descrição de Nano Machine...')">Ver descrição</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OBRA 5 - lançado há 20 horas -->
-                    <div class="carousel-slide" data-lancamento="">
-                        <div class="badge-new">
-                            <span class="badge-new-label">NEW</span>
-                            <span class="badge-new-time">--</span>
-                        </div>
-                        <div class="carousel-info">
-                            <h3>THE BEGINNING AFTER THE END</h3>
-                            <p>Uma nova vida começa enquanto um poderoso destino se revela.</p>
-                            <div class="carousel-botoes">
-                                <button class="btn-ler" onclick="alert('Iniciando leitura de The Beginning After The End...')">Começar a ler</button>
-                                <button class="btn-desc" onclick="alert('Abrindo descrição de The Beginning After The End...')">Ver descrição</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OBRA 6 - lançado há 30 horas (1 dia) -->
-                    <div class="carousel-slide" data-lancamento="">
-                        <div class="badge-new">
-                            <span class="badge-new-label">NEW</span>
-                            <span class="badge-new-time">--</span>
-                        </div>
-                        <div class="carousel-info">
-                            <h3>MERCENARY ENROLLMENT</h3>
-                            <p>Um jovem retorna à vida comum carregando um passado extraordinário.</p>
-                            <div class="carousel-botoes">
-                                <button class="btn-ler" onclick="alert('Iniciando leitura de Mercenary Enrollment...')">Começar a ler</button>
-                                <button class="btn-desc" onclick="alert('Abrindo descrição de Mercenary Enrollment...')">Ver descrição</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OBRA 7 - lançado há 50 horas (some o selo) -->
-                    <div class="carousel-slide" data-lancamento="">
-                        <div class="badge-new">
-                            <span class="badge-new-label">NEW</span>
-                            <span class="badge-new-time">--</span>
-                        </div>
-                        <div class="carousel-info">
-                            <h3>RANKER WHO LIVES A SECOND TIME</h3>
-                            <p>Depois de perder alguém importante, ele decide subir ao topo.</p>
-                            <div class="carousel-botoes">
-                                <button class="btn-ler" onclick="alert('Iniciando leitura de Ranker Who Lives A Second Time...')">Começar a ler</button>
-                                <button class="btn-desc" onclick="alert('Abrindo descrição de Ranker Who Lives A Second Time...')">Ver descrição</button>
-                            </div>
-                        </div>
-                    </div>
-
+                    <!-- preenchido via JS com obras do Firestore -->
                 </div>
 
                 <!-- Bolinhas Indicadoras -->
@@ -231,162 +120,14 @@
             <h2 class="titulo-secao">🔥 RANKING DE OBRAS</h2>
 
             <div class="horizontal-scroll" id="rankingObrasScroll">
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">
-                        [ CAPA ]
-                        <span class="badge-views">👁️ 5.8M</span>
-                    </div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Solo Leveling</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Top 1</span>
-                                <span class="cap-data">Concluído</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">
-                        [ CAPA ]
-                        <span class="badge-views">👁️ 4.9M</span>
-                    </div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Omniscient Reader</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Top 2</span>
-                                <span class="cap-data">Ativo</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">
-                        [ CAPA ]
-                        <span class="badge-views">👁️ 4.1M</span>
-                    </div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Tower of God</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Top 3</span>
-                                <span class="cap-data">Ativo</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">
-                        [ CAPA ]
-                        <span class="badge-views">👁️ 3.7M</span>
-                    </div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Nano Machine</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Top 4</span>
-                                <span class="cap-data">Ativo</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+                <div style="font-size:10px;color:var(--cinza-texto);padding:10px;">Carregando ranking...</div>
             </div>
 
             <!-- SEÇÃO: MAIS LIDOS DA SEMANA -->
             <h2 class="titulo-secao">MAIS LIDOS DA SEMANA</h2>
 
             <div class="horizontal-scroll" id="maisLidosScroll">
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">
-                        [ CAPA ]
-                        <span class="badge-views">👁️ 4.2M</span>
-                    </div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Tower of God</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 540</span>
-                                <span class="cap-data">Novo</span>
-                            </div>
-
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 539</span>
-                                <span class="cap-data">-</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">
-                        [ CAPA ]
-                        <span class="badge-views">👁️ 3.5M</span>
-                    </div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Nano Machine</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 180</span>
-                                <span class="cap-data">Novo</span>
-                            </div>
-
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 179</span>
-                                <span class="cap-data">-</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="manhwa-card">
-                    <div class="manhwa-capa">
-                        [ CAPA ]
-                        <span class="badge-views">👁️ 2.9M</span>
-                    </div>
-
-                    <div class="manhwa-info">
-                        <div class="manhwa-titulo">Beginning After</div>
-
-                        <div class="ultimos-caps">
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 110</span>
-                                <span class="cap-data">Novo</span>
-                            </div>
-
-                            <div class="cap-linha">
-                                <span class="cap-numero">Cap. 109</span>
-                                <span class="cap-data">-</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div
-                    class="ver-mais-card"
-                    onclick="alert('Carregando mais obras populares...')"
-                >
-                    Ver mais +
-                </div>
-
+                <div style="font-size:10px;color:var(--cinza-texto);padding:10px;">Carregando...</div>
             </div>
 
             <!-- SEÇÃO: LANÇAMENTOS (dinâmico — obras mais recentes primeiro) -->
@@ -483,18 +224,19 @@
 
         <!-- TELA 4: CONFIGURAÇÕES -->
         <div id="view-config" class="view">
-
             <h2 class="titulo-secao">CONFIGURAÇÕES</h2>
-
-            <div
-                class="conteudo-placeholder"
-                style="text-align: left;"
-            >
+            <div class="conteudo-placeholder" style="text-align:left;line-height:1.6;">
                 > Tema: Preto & Verde Neon<br>
                 > Firebase Conectado ✅<br>
-                > Versão: 1.0.0
+                > Versão: 1.1.0
             </div>
-
+            <h2 class="titulo-secao">🔔 NOTIFICAÇÕES</h2>
+            <p style="font-size:10px;color:var(--cinza-texto);margin-bottom:10px;line-height:1.4;">
+                Receba avisos de novos capítulos e mensagens da equipe.
+            </p>
+            <div id="notifStatus" style="font-size:11px;color:var(--cinza-texto);margin-bottom:10px;">Status: verificando...</div>
+            <button class="btn-submit" onclick="ativarNotificacoes()">Ativar notificações</button>
+            <button class="btn-submit" style="background:transparent;border:1px solid var(--verde-neon);color:var(--verde-neon);margin-top:8px;" onclick="desativarNotificacoesLocal()">Pausar neste dispositivo</button>
         </div>
 
         <!-- TELA 5: DETALHES DA OBRA (Sinopse + Gêneros + Capítulos) -->
@@ -524,10 +266,7 @@
                 Carregando sinopse...
             </div>
 
-            <div class="obra-progresso-texto" id="obraProgressoTexto"></div>
-            <div class="progresso-barra-wrap" id="obraProgressoBarraWrap" style="display:none; margin-bottom:12px;">
-                <div class="progresso-barra" id="obraProgressoBarra" style="width:0%"></div>
-            </div>
+            <!-- progresso por barra removido: só capa + capítulo em Continuar lendo -->
 
             <div class="obra-botoes-acao">
                 <button class="btn-ler-agora" id="btnLerAgora" onclick="alert('Iniciando leitura...')">
@@ -546,6 +285,48 @@
         </div>
 
 
+
+        <!-- TELA: CHAT COMUNIDADE (fullscreen interno + teclado) -->
+        <div id="view-chat" class="view view-chat">
+            <div class="chat-shell" id="chatShell">
+                <header class="chat-topbar">
+                    <button type="button" class="chat-btn-voltar" onclick="mudarTela('inicio')" aria-label="Voltar">←</button>
+                    <div class="chat-topbar-centro">
+                        <div class="chat-topbar-titulo">COMUNIDADE</div>
+                        <div class="chat-topbar-sub">Mensagens expiram em 24h · tempo real</div>
+                    </div>
+                    <div class="chat-topbar-status" id="chatStatusDot" title="Online">
+                        <span class="chat-status-pulse"></span>
+                    </div>
+                </header>
+
+                <div id="chatMensagens" class="chat-mensagens" aria-live="polite">
+                    <div class="chat-empty">
+                        <div class="chat-empty-icon">◉</div>
+                        <div>Sincronizando canal...</div>
+                    </div>
+                </div>
+
+                <footer class="chat-composer" id="chatComposer">
+                    <div id="chatErro" class="chat-erro"></div>
+                    <div class="chat-composer-inner">
+                        <input
+                            type="text"
+                            id="chatInput"
+                            class="chat-input"
+                            placeholder="Mensagem para a comunidade..."
+                            maxlength="300"
+                            autocomplete="off"
+                            enterkeyhint="send"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();enviarChat();}"
+                        >
+                        <button type="button" class="chat-enviar" onclick="enviarChat()" aria-label="Enviar">
+                            <span>➤</span>
+                        </button>
+                    </div>
+                </footer>
+            </div>
+        </div>
 
         <!-- TELA: SUPORTE (usuário envia ticket) -->
         <div id="view-suporte" class="view">
@@ -573,6 +354,8 @@
             <div class="adm-tabs">
                 <button class="adm-tab ativo" onclick="admTab('obras')">Obras</button>
                 <button class="adm-tab" onclick="admTab('capitulos')">Capítulos</button>
+                <button class="adm-tab" onclick="admTab('destaques')">Destaques</button>
+                <button class="adm-tab" onclick="admTab('avisos')">Avisos</button>
                 <button class="adm-tab" onclick="admTab('tickets')">Tickets</button>
                 <button class="adm-tab" onclick="admTab('usuarios')">Usuários</button>
             </div>
@@ -640,6 +423,39 @@
                 <div id="admCapMsg" class="sucesso-msg"></div>
                 <div id="admCapErro" class="erro-msg"></div>
                 <button class="btn-submit" onclick="admSalvarCapitulo()">Salvar capítulo</button>
+            </div>
+
+            <!-- TAB DESTAQUES (carrossel) -->
+            <div id="admTab-destaques" class="adm-panel">
+                <h3 class="adm-subtitulo">Carrossel / Destaques</h3>
+                <p style="font-size:10px;color:var(--cinza-texto);margin-bottom:10px;line-height:1.45;">
+                    1. Ative a obra no carrossel.<br>
+                    2. No GitHub, coloque a <b>imagem do banner</b> em<br>
+                    <code style="color:#39FF14">carrossel/nome-da-obra.webp</code><br>
+                    (não é a capa — é uma arte só do carrossel).<br>
+                    Tamanho ideal: <b>1200 × 450 px</b> (largura × altura).<br>
+                    3. Pode remover a qualquer momento.
+                </p>
+                <div id="admListaDestaques" class="adm-lista"></div>
+            </div>
+
+            <!-- TAB AVISOS / NOTIFICAÇÕES -->
+            <div id="admTab-avisos" class="adm-panel">
+                <h3 class="adm-subtitulo">Enviar aviso (tempo real)</h3>
+                <p style="font-size:10px;color:var(--cinza-texto);margin-bottom:10px;line-height:1.4;">
+                    Quem tiver o site aberto (ou notificações ativas) recebe na hora.
+                </p>
+                <div class="form-group">
+                    <label>Título</label>
+                    <input type="text" id="avisoTitulo" class="form-input" placeholder="Ex: Novo capítulo!">
+                </div>
+                <div class="form-group">
+                    <label>Mensagem</label>
+                    <textarea id="avisoTexto" class="form-input" rows="3" style="min-height:70px;resize:vertical;" placeholder="Cap. 180 de Solo já disponível"></textarea>
+                </div>
+                <div id="avisoMsg" class="sucesso-msg"></div>
+                <div id="avisoErro" class="erro-msg"></div>
+                <button class="btn-submit" onclick="admEnviarAviso()">Enviar aviso agora</button>
             </div>
 
             <!-- TAB TICKETS -->
