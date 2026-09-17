@@ -1795,6 +1795,7 @@ window.renderizarFavoritos = function() {
             }));
         }
     });
+    setTimeout(aplicarCapasGithub, 80);
 };
 
 window.toggleFavorito = function() {
@@ -1872,9 +1873,80 @@ function slugify(titulo) {
         .replace(/(^-|-$)/g, '');
 }
 
+
+/* =========================================================
+   IMAGENS via GitHub Pages (relativo) + jsDelivr (listagem)
+   Estrutura:
+     capas/{nome-obra}/qualquer-imagem
+     caps/{nome-obra}/{numero}/qualquer-imagem
+   ========================================================= */
+const GITHUB_OWNER = window.GITHUB_OWNER || 'carlosandre1514-prog';
+const GITHUB_REPO = window.GITHUB_REPO || 'manhwa-toons';
+const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
+
+let _repoTreeCache = null;
+let _repoTreePromise = null;
+
+async function carregarArvoreRepo() {
+    if (_repoTreeCache) return _repoTreeCache;
+    if (_repoTreePromise) return _repoTreePromise;
+    _repoTreePromise = (async () => {
+        try {
+            // jsDelivr não sofre o rate limit da API do GitHub
+            const url = `https://data.jsdelivr.com/v1/packages/gh/${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BRANCH}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('jsdelivr ' + res.status);
+            const data = await res.json();
+            _repoTreeCache = data;
+            return data;
+        } catch (e) {
+            console.warn('árvore repo', e);
+            _repoTreeCache = { files: [] };
+            return _repoTreeCache;
+        } finally {
+            _repoTreePromise = null;
+        }
+    })();
+    return _repoTreePromise;
+}
+
+function _isImgName(name) {
+    return /\.(png|jpe?g|webp|gif|bmp|avif|jfif)$/i.test(name || '');
+}
+
+function _walkDir(node, parts) {
+    if (!node || !parts.length) return node;
+    const [head, ...rest] = parts;
+    if (!node.files) return null;
+    const child = node.files.find(f => f.name === head);
+    if (!child) return null;
+    if (!rest.length) return child;
+    return _walkDir(child, rest);
+}
+
+function _listImagesInDir(node) {
+    if (!node || !node.files) return [];
+    return node.files
+        .filter(f => f.type === 'file' && _isImgName(f.name))
+        .map(f => f.name)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+/** URL pública da imagem (Pages relativo ou jsDelivr CDN) */
+function urlArquivoRepo(pathRelativo) {
+    // Caminho relativo funciona no GitHub Pages
+    const limpo = String(pathRelativo || '').replace(/^\/+/, '');
+    // Preferência: relativo (mesmo domínio do app)
+    return limpo;
+}
+
+function urlArquivoCdn(pathRelativo) {
+    const limpo = String(pathRelativo || '').replace(/^\/+/, '');
+    return `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BRANCH}/${limpo}`;
+}
+
 function urlCapa(titulo) {
-    // placeholder; a capa real vem de capas/{slug}/ via GitHub API
-    return `capas/${slugify(titulo)}/capa.png`;
+    return `capas/${slugify(titulo)}/`;
 }
 
 function htmlCapa(titulo, classeExtra = '') {
@@ -1883,58 +1955,60 @@ function htmlCapa(titulo, classeExtra = '') {
         return `<img src="${obra.capaURL || obra.capaData}" alt="${titulo}" class="${classeExtra}" onerror="this.onerror=null; this.src='logo-capa.png'; this.classList.add('capa-fallback');">`;
     }
     const slug = slugify(titulo);
-    // Começa com logo; aplicarCapasGithub troca pela 1ª imagem de capas/{slug}/
+    // logo até resolver a imagem real da pasta capas/{slug}/
     return `<img src="logo-capa.png" data-slug="${slug}" data-capa="1" alt="${titulo}" class="${classeExtra} capa-fallback">`;
 }
 
-// Estrutura:
-//   capas/{slug-da-obra}/qualquer-imagem.webp  ← capa
-//   caps/{slug-da-obra}/{numero}/qualquer.webp ← páginas do capítulo (0, 00, 1, 2...)
 const _capaGithubCache = {};
+
 async function resolverCapaGithub(titulo) {
-    const GITHUB_OWNER = window.GITHUB_OWNER || 'carlosandre1514-prog';
-    const GITHUB_REPO = window.GITHUB_REPO || 'manhwa-toons';
-    const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
     const slug = slugify(titulo);
     if (_capaGithubCache[slug]) return _capaGithubCache[slug];
+
+    // tenta slug e variações comuns (solo vs solo-leveling)
+    const candidatos = [slug];
+    if (!slug.includes('-')) {
+        // se o título no app for só "Solo", tenta pastas que começam com solo
+    }
+
     try {
-        // Principal: pasta capas/{slug}/ — qualquer imagem dentro
-        const urlSub = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/capas/${slug}?ref=${GITHUB_BRANCH}`;
-        const res2 = await fetch(urlSub);
-        if (res2.ok) {
-            const data2 = await res2.json();
-            if (Array.isArray(data2)) {
-                const imgs = data2
-                    .filter(f => f.type === 'file' && /\.(png|jpe?g|webp|gif|bmp|avif|jfif|heic|heif)$/i.test(f.name))
-                    .map(f => ({ url: f.download_url, name: f.name }))
-                    .filter(x => x.url);
-                imgs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-                if (imgs[0]) {
-                    _capaGithubCache[slug] = imgs[0].url;
-                    return imgs[0].url;
-                }
+        const tree = await carregarArvoreRepo();
+        const capasRoot = _walkDir(tree, ['capas']);
+        if (!capasRoot || !capasRoot.files) return null;
+
+        // 1) pasta exata capas/{slug}/
+        let pasta = capasRoot.files.find(f => f.type === 'directory' && f.name === slug);
+        // 2) pasta que começa com o slug (solo → solo-leveling)
+        if (!pasta) {
+            pasta = capasRoot.files.find(f => f.type === 'directory' && (f.name.startsWith(slug + '-') || f.name.startsWith(slug + '_')));
+        }
+        // 3) slug contido no nome da pasta
+        if (!pasta) {
+            pasta = capasRoot.files.find(f => f.type === 'directory' && f.name.includes(slug));
+        }
+
+        if (pasta) {
+            const imgs = _listImagesInDir(pasta);
+            if (imgs[0]) {
+                const path = `capas/${pasta.name}/${imgs[0]}`;
+                // testa relativo; CDN como fallback no onerror via data-cdn
+                _capaGithubCache[slug] = path;
+                return path;
             }
         }
-        // Compatibilidade: arquivo solto capas/slug.png (etc.)
-        const urlDir = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/capas?ref=${GITHUB_BRANCH}`;
-        const res = await fetch(urlDir);
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-                const match = data
-                    .filter(f => f.type === 'file' && /\.(png|jpe?g|webp|gif|bmp|avif|jfif|heic|heif)$/i.test(f.name))
-                    .find(f => {
-                        const base = f.name.replace(/\.[^.]+$/, '').toLowerCase();
-                        return base === slug || base.startsWith(slug + '-') || base.startsWith(slug + '_');
-                    });
-                if (match && match.download_url) {
-                    _capaGithubCache[slug] = match.download_url;
-                    return match.download_url;
-                }
-            }
+
+        // arquivo solto em capas/
+        const solto = (capasRoot.files || []).find(f =>
+            f.type === 'file' && _isImgName(f.name) &&
+            f.name.replace(/\.[^.]+$/, '').toLowerCase() === slug
+        );
+        if (solto) {
+            const path = `capas/${solto.name}`;
+            _capaGithubCache[slug] = path;
+            return path;
         }
     } catch (e) {
-        console.warn('capa github', e);
+        console.warn('capa', e);
     }
     return null;
 }
@@ -1943,15 +2017,63 @@ async function aplicarCapasGithub() {
     const imgs = document.querySelectorAll('img[data-slug][data-capa]');
     for (const img of imgs) {
         if (img.dataset.ghDone) continue;
-        const url = await resolverCapaGithub(img.dataset.slug);
         img.dataset.ghDone = '1';
+        const url = await resolverCapaGithub(img.dataset.slug);
         if (url) {
             img.classList.remove('capa-fallback');
-            img.onerror = function() { this.onerror = null; this.src = 'logo-capa.png'; this.classList.add('capa-fallback'); };
-            img.src = url;
+            const cdn = urlArquivoCdn(url);
+            img.onerror = function() {
+                // se relativo falhar, tenta CDN
+                if (!this.dataset.triedCdn) {
+                    this.dataset.triedCdn = '1';
+                    this.src = cdn;
+                    return;
+                }
+                this.onerror = null;
+                this.src = 'logo-capa.png';
+                this.classList.add('capa-fallback');
+            };
+            img.src = url; // relativo no Pages
         }
     }
 }
+
+async function listarPaginasGithub(slug, numCap) {
+    const num = String(numCap);
+    try {
+        const tree = await carregarArvoreRepo();
+        const capsRoot = _walkDir(tree, ['caps']);
+        if (!capsRoot) return [];
+
+        // pasta da obra
+        let obraDir = (capsRoot.files || []).find(f => f.type === 'directory' && f.name === slug);
+        if (!obraDir) {
+            obraDir = (capsRoot.files || []).find(f => f.type === 'directory' && (f.name.startsWith(slug + '-') || f.name.includes(slug)));
+        }
+        if (!obraDir) return [];
+
+        // pasta do capítulo: 01, 1, 02...
+        let capDir = (obraDir.files || []).find(f => f.type === 'directory' && f.name === num);
+        if (!capDir) {
+            // tenta com zero à esquerda
+            const pad = num.padStart(2, '0');
+            capDir = (obraDir.files || []).find(f => f.type === 'directory' && (f.name === pad || f.name === String(parseInt(num, 10))));
+        }
+        if (!capDir) return [];
+
+        const names = _listImagesInDir(capDir);
+        const obraName = obraDir.name;
+        const capName = capDir.name;
+        return names.map(n => {
+            const rel = `caps/${obraName}/${capName}/${n}`;
+            return { rel, cdn: urlArquivoCdn(rel) };
+        });
+    } catch (e) {
+        console.warn('listar paginas', e);
+        return [];
+    }
+}
+
 
 
 
@@ -2345,6 +2467,7 @@ window.renderizarBiblioteca = function(filtro = '') {
     }
 
     obras.forEach(obra => grid.appendChild(criarCardObra(obra)));
+    setTimeout(aplicarCapasGithub, 80);
 };
 
 /* =========================================================
@@ -2369,39 +2492,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-/* =========================================================
-   GITHUB: listar páginas com QUALQUER nome de arquivo
-   ========================================================= */
-const GITHUB_OWNER = 'carlosandre1514-prog';
-const GITHUB_REPO = 'manhwa-toons';
-const GITHUB_BRANCH = 'main';
-window.GITHUB_OWNER = GITHUB_OWNER;
-window.GITHUB_REPO = GITHUB_REPO;
-window.GITHUB_BRANCH = GITHUB_BRANCH;
+/* GitHub owner/repo: definidos acima junto com listarPaginasGithub */
+window.GITHUB_OWNER = window.GITHUB_OWNER || 'carlosandre1514-prog';
+window.GITHUB_REPO = window.GITHUB_REPO || 'manhwa-toons';
+window.GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
 
-async function listarPaginasGithub(slug, numCap) {
-    const path = `caps/${slug}/${numCap}`;
-    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_BRANCH}`;
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return [];
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-        const imgs = data
-            .filter(f => f.type === 'file' && /\.(png|jpe?g|webp|gif|bmp|avif|jfif|heic|heif)$/i.test(f.name))
-            .map(f => f.download_url || f.name);
-        // ordena por nome natural (page1, page2, 01, 02, a, b...)
-        imgs.sort((a, b) => {
-            const na = (a.split('/').pop() || a);
-            const nb = (b.split('/').pop() || b);
-            return na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
-        });
-        return imgs;
-    } catch (e) {
-        console.warn('GitHub API:', e);
-        return [];
-    }
-}
 
 function parseViewsNumber(v) {
     if (typeof v === 'number') return v;
@@ -2447,6 +2542,7 @@ window.renderizarRankingObras = function() {
             </div>`;
         el.appendChild(card);
     });
+    setTimeout(aplicarCapasGithub, 80);
 };
 
 window.renderizarMaisLidos = function() {
@@ -2479,6 +2575,7 @@ window.renderizarMaisLidos = function() {
             </div>`;
         el.appendChild(card);
     });
+    setTimeout(aplicarCapasGithub, 80);
 };
 
 window.renderizarCarrossel = async function() {
@@ -2495,25 +2592,34 @@ window.renderizarCarrossel = async function() {
     }).slice(0, 8);
 
     if (!obras.length) {
-        slider.innerHTML = `<div class="carousel-slide" style="background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.4)), url('header-bg.png') center/cover;">
-            <div class="carousel-info"><h3>Manhwa Toons</h3><p>Marque obras em ADM → Destaques e envie o banner em carrossel/</p></div>
+        slider.innerHTML = `<div class="carousel-slide">
+            <div class="carousel-info"><h3>Manhwa Toons</h3><p>Marque obras em ADM → Destaques.</p></div>
         </div>`;
         return;
     }
 
-    const banners = await Promise.all(obras.map(o => resolverBannerCarrossel(o.titulo)));
+    // Banner dedicado (carrossel/) OU mesma capa da obra (capas/)
+    const medias = await Promise.all(obras.map(async (o) => {
+        const banner = await resolverBannerCarrossel(o.titulo);
+        if (banner) return { tipo: 'banner', url: banner };
+        const capa = await resolverCapaGithub(o.titulo);
+        return { tipo: 'capa', url: capa || 'logo-capa.png' };
+    }));
 
     slider.innerHTML = obras.map((o, i) => {
         const full = dadosObras[o.titulo] || o;
         const sin = (full.sinopse || '').slice(0, 90) + ((full.sinopse || '').length > 90 ? '...' : '');
         const t = String(o.titulo).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        const img = banners[i] || 'header-bg.png';
-        return `<div class="carousel-slide carousel-slide-capa" style="
-            background-color:#0d0d0d;
-            background-image: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.35) 45%, rgba(0,0,0,0.1) 100%), url('${img}');
-            background-size: auto, contain;
-            background-position: center, center top;
-            background-repeat: no-repeat;">
+        const m = medias[i];
+        const url = m.url || 'logo-capa.png';
+        const cdn = (url.startsWith('http') ? url : urlArquivoCdn(url));
+        // banner horizontal: cover | capa vertical: cover no topo (sem ficar minúscula)
+        const fitClass = m.tipo === 'banner' ? 'carousel-media-banner' : 'carousel-media-capa';
+        return `<div class="carousel-slide">
+            <div class="carousel-media ${fitClass}">
+                <img src="${url}" data-cdn="${cdn}" alt="" onerror="if(!this.dataset.t){this.dataset.t=1;this.src=this.dataset.cdn||'logo-capa.png';}">
+            </div>
+            <div class="carousel-gradiente"></div>
             <div class="badge-new"><span class="badge-new-label">NEW</span><span class="badge-new-time">destaque</span></div>
             <div class="carousel-info">
                 <h3>${o.titulo.toUpperCase()}</h3>
@@ -2531,45 +2637,31 @@ const _bannerCache = {};
 async function resolverBannerCarrossel(titulo) {
     const slug = slugify(titulo);
     if (_bannerCache[slug]) return _bannerCache[slug];
-    const GITHUB_OWNER = window.GITHUB_OWNER || 'carlosandre1514-prog';
-    const GITHUB_REPO = window.GITHUB_REPO || 'manhwa-toons';
-    const GITHUB_BRANCH = window.GITHUB_BRANCH || 'main';
     try {
-        // pasta carrossel/ — arquivo que bata com o slug, ou qualquer imagem carrossel/slug.*
-        const urlDir = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/carrossel?ref=${GITHUB_BRANCH}`;
-        const res = await fetch(urlDir);
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-                const imgs = data.filter(f => f.type === 'file' && /\\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(f.name));
-                const match = imgs.find(f => {
-                    const base = f.name.replace(/\\.[^.]+$/, '').toLowerCase();
-                    return base === slug || base.startsWith(slug);
-                });
-                if (match && match.download_url) {
-                    _bannerCache[slug] = match.download_url;
-                    return match.download_url;
-                }
+        const tree = await carregarArvoreRepo();
+        const root = _walkDir(tree, ['carrossel']);
+        if (!root || !root.files) return null;
+        // carrossel/{slug}/qualquer imagem
+        let pasta = root.files.find(f => f.type === 'directory' && f.name === slug);
+        if (!pasta) pasta = root.files.find(f => f.type === 'directory' && (f.name.startsWith(slug) || f.name.includes(slug)));
+        if (pasta) {
+            const imgs = _listImagesInDir(pasta);
+            if (imgs[0]) {
+                const path = `carrossel/${pasta.name}/${imgs[0]}`;
+                _bannerCache[slug] = path;
+                return path;
             }
         }
-        // pasta carrossel/{slug}/
-        const urlSub = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/carrossel/${slug}?ref=${GITHUB_BRANCH}`;
-        const res2 = await fetch(urlSub);
-        if (res2.ok) {
-            const data2 = await res2.json();
-            if (Array.isArray(data2)) {
-                const imgs = data2
-                    .filter(f => f.type === 'file' && /\\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(f.name))
-                    .map(f => f.download_url)
-                    .filter(Boolean);
-                if (imgs[0]) {
-                    _bannerCache[slug] = imgs[0];
-                    return imgs[0];
-                }
-            }
+        // carrossel/slug.webp arquivo solto
+        const solto = root.files.find(f => f.type === 'file' && _isImgName(f.name) &&
+            f.name.replace(/\\.[^.]+$/, '').toLowerCase().startsWith(slug));
+        if (solto) {
+            const path = `carrossel/${solto.name}`;
+            _bannerCache[slug] = path;
+            return path;
         }
     } catch (e) {
-        console.warn('banner carrossel', e);
+        console.warn('banner', e);
     }
     return null;
 }
@@ -2756,6 +2848,7 @@ window.renderizarLancamentos = function() {
         `;
         grid.appendChild(card);
     });
+    setTimeout(aplicarCapasGithub, 80);
 };
 
 window.admTab = function(nome) {
@@ -3038,32 +3131,17 @@ window.abrirCapitulo = function(titulo, numero) {
         paginas.innerHTML = '';
 
         const slug = slugify(titulo);
-        // 1) Tenta GitHub API (qualquer nome de arquivo)
-        let urls = await listarPaginasGithub(slug, numero);
+        // 1) Lista imagens em caps/{obra}/{numero}/ via jsDelivr (sem rate limit do GitHub)
+        let pages = await listarPaginasGithub(slug, numero);
 
-        // 2) Fallback: tenta 01.png, 02.png... se API falhar/vazia
-        if (!urls.length) {
-            const localUrls = [];
-            for (let n = 1; n <= 40; n++) {
-                const pag = String(n).padStart(2, '0');
-                localUrls.push(`caps/${slug}/${numero}/${pag}.png`);
-            }
-            // carrega até 2 falhas seguidas
-            let fails = 0;
-            for (const src of localUrls) {
-                if (fails >= 2) break;
-                const ok = await new Promise(resolve => {
-                    const img = new Image();
-                    img.onload = () => resolve(true);
-                    img.onerror = () => resolve(false);
-                    img.src = src;
-                });
-                if (ok) { urls.push(src); fails = 0; }
-                else fails++;
-            }
+        // 2) Fallback: se slug for "solo" e pasta for "solo-leveling", listarPaginas já tenta include
+        if (!pages.length) {
+            // tenta número com zero: 1 ↔ 01
+            const alt = String(numero).padStart(2, '0');
+            if (alt !== String(numero)) pages = await listarPaginasGithub(slug, alt);
         }
 
-        if (!urls.length) {
+        if (!pages.length) {
             const div = document.createElement('div');
             div.className = 'leitor-pagina';
             div.innerHTML = `
@@ -3071,20 +3149,22 @@ window.abrirCapitulo = function(titulo, numero) {
                 <div style="color:var(--verde-neon);font-family:Orbitron,sans-serif;">Cap. ${numero}</div>
                 <div style="font-size:10px;text-align:center;max-width:280px;line-height:1.45;">
                     Nenhuma página encontrada.<br>
-                    No GitHub, coloque as imagens em:<br>
+                    No GitHub coloque em:<br>
                     <code style="color:#39FF14">caps/${slug}/${numero}/</code><br>
-                    (qualquer nome: pagina1.png, a.jpg, 01.png...)
+                    (qualquer nome de imagem)
                 </div>`;
             paginas.appendChild(div);
         } else {
-            urls.forEach((src, i) => {
+            pages.forEach((p, i) => {
+                const rel = typeof p === 'string' ? p : p.rel;
+                const cdn = typeof p === 'string' ? p : p.cdn;
                 const div = document.createElement('div');
                 div.className = 'leitor-pagina';
                 div.style.minHeight = 'auto';
                 div.style.padding = '0';
                 div.style.border = 'none';
                 div.style.background = 'transparent';
-                div.innerHTML = `<img src="${src}" alt="Página ${i + 1}" style="width:100%;height:auto;display:block;" loading="lazy">`;
+                div.innerHTML = `<img src="${rel}" data-cdn="${cdn}" alt="Página ${i + 1}" style="width:100%;height:auto;display:block;" loading="lazy" onerror="if(!this.dataset.t){this.dataset.t=1;this.src=this.dataset.cdn;}">`;
                 paginas.appendChild(div);
             });
         }
@@ -3184,15 +3264,75 @@ const CHAT_TTL_MS = 24 * 60 * 60 * 1000;
 function formatChatHora(ts) {
     try {
         const d = ts && ts.toDate ? ts.toDate() : new Date(ts);
+        const agora = new Date();
+        const diff = (agora - d) / 1000;
+        if (diff < 60) return 'agora';
+        if (diff < 3600) return Math.floor(diff / 60) + ' min';
+        if (diff < 86400 && d.getDate() === agora.getDate()) {
+            return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        }
         return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     } catch (_) {
         return '';
     }
 }
 
+function formatChatDia(ts) {
+    try {
+        const d = ts && ts.toDate ? ts.toDate() : new Date(ts);
+        const hoje = new Date();
+        const ontem = new Date();
+        ontem.setDate(hoje.getDate() - 1);
+        if (d.toDateString() === hoje.toDateString()) return 'Hoje';
+        if (d.toDateString() === ontem.toDateString()) return 'Ontem';
+        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch (_) {
+        return '';
+    }
+}
+
+function chatCorAvatar(nick) {
+    const cores = ['#39FF14', '#00E5FF', '#FF6B9D', '#FFD60A', '#BF5AF2', '#64D2FF', '#30D158'];
+    let h = 0;
+    const s = String(nick || 'A');
+    for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * (i + 1)) % cores.length;
+    return cores[h];
+}
+
+window.chatAtualizarContador = function() {
+    const input = document.getElementById('chatInput');
+    const el = document.getElementById('chatContador');
+    if (!input || !el) return;
+    const n = (input.value || '').length;
+    el.textContent = n + '/300';
+    el.classList.toggle('quase', n >= 250 && n < 300);
+    el.classList.toggle('cheio', n >= 300);
+};
+
+window.chatIrParaFim = function() {
+    const box = document.getElementById('chatMensagens');
+    if (box) box.scrollTop = box.scrollHeight;
+    const btn = document.getElementById('chatScrollBtn');
+    if (btn) btn.style.display = 'none';
+};
+
+function chatBindScrollBtn() {
+    const box = document.getElementById('chatMensagens');
+    const btn = document.getElementById('chatScrollBtn');
+    if (!box || !btn || box.dataset.scrollBound) return;
+    box.dataset.scrollBound = '1';
+    box.addEventListener('scroll', () => {
+        const longe = box.scrollHeight - box.scrollTop - box.clientHeight > 120;
+        btn.style.display = longe ? 'block' : 'none';
+    }, { passive: true });
+}
+
 window.iniciarChatComunidade = function() {
     const box = document.getElementById('chatMensagens');
     if (!box) return;
+    chatBindScrollBtn();
+    chatAtualizarContador();
+
     if (_chatUnsub) {
         try { _chatUnsub(); } catch (_) {}
         _chatUnsub = null;
@@ -3219,29 +3359,50 @@ window.iniciarChatComunidade = function() {
         });
 
         msgs.sort((a, b) => (a._t || 0) - (b._t || 0));
+
+        const sub = document.getElementById('chatTopSub');
+        if (sub) sub.textContent = msgs.length
+            ? `${msgs.length} msg nas últimas 24h · tempo real`
+            : 'Canal ao vivo · msgs expiram em 24h';
+
         if (!msgs.length) {
             box.innerHTML = `<div class="chat-empty">
-                <div class="chat-empty-icon">◈</div>
-                <div>Canal silencioso nas últimas 24h.</div>
-                <div style="margin-top:6px;opacity:0.7;">Envie a primeira mensagem.</div>
+                <div class="chat-empty-ring" style="animation:none;border-color:rgba(57,255,20,0.35);"></div>
+                <div class="chat-empty-title">Canal silencioso</div>
+                <div class="chat-empty-desc">Nenhuma mensagem nas últimas 24h.<br>Seja o primeiro a escrever.</div>
             </div>`;
             return;
         }
-        const noFundo = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-        box.innerHTML = msgs.map(m => {
+
+        const noFundo = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
+        let html = '';
+        let ultimoDia = '';
+        msgs.forEach(m => {
+            const dia = formatChatDia(m.createdAt || m.createdAtMs);
+            if (dia && dia !== ultimoDia) {
+                html += `<div class="chat-dia">${dia}</div>`;
+                ultimoDia = dia;
+            }
             const eu = usuarioAtualData && m.uid && m.uid === usuarioAtualData.uid;
-            const inicial = ((m.nick || '?')[0] || '?').toUpperCase();
-            return `<div class="chat-msg ${eu ? 'chat-msg-eu' : ''}">
-                <div class="chat-msg-nick">${eu ? 'Você' : escapeHtml(m.nick || 'Anônimo')}</div>
-                <div class="chat-msg-texto">${escapeHtml(m.texto || '')}</div>
-                <div class="chat-msg-hora">${formatChatHora(m.createdAt || m.createdAtMs)}</div>
+            const nick = m.nick || 'Anônimo';
+            const inicial = (nick.trim()[0] || '?').toUpperCase();
+            const cor = chatCorAvatar(nick);
+            html += `<div class="chat-row ${eu ? 'chat-row-eu' : ''}">
+                <div class="chat-avatar" style="background:linear-gradient(135deg,${cor},#111)">${escapeHtml(inicial)}</div>
+                <div class="chat-msg ${eu ? 'chat-msg-eu' : ''}">
+                    <div class="chat-msg-nick">${eu ? 'Você' : escapeHtml(nick)}</div>
+                    <div class="chat-msg-texto">${escapeHtml(m.texto || '')}</div>
+                    <div class="chat-msg-hora">${formatChatHora(m.createdAt || m.createdAtMs)}</div>
+                </div>
             </div>`;
-        }).join('');
+        });
+        box.innerHTML = html;
         if (noFundo) box.scrollTop = box.scrollHeight;
     }, (err) => {
         console.warn(err);
-        box.innerHTML = `<div class="chat-empty" style="color:#ff5555;">
-            Falha no canal: ${escapeHtml(err.message || String(err))}
+        box.innerHTML = `<div class="chat-empty">
+            <div class="chat-empty-title" style="color:#ff6b6b;">Falha no canal</div>
+            <div class="chat-empty-desc">${escapeHtml(err.message || String(err))}</div>
         </div>`;
     });
 };
@@ -3257,6 +3418,7 @@ function escapeHtml(s) {
 window.enviarChat = async function() {
     const input = document.getElementById('chatInput');
     const err = document.getElementById('chatErro');
+    const btn = document.getElementById('chatBtnEnviar');
     if (err) {
         err.textContent = '';
         err.classList.remove('visivel');
@@ -3271,7 +3433,8 @@ window.enviarChat = async function() {
         return;
     }
     try {
-        input.disabled = true;
+        if (input) input.disabled = true;
+        if (btn) btn.disabled = true;
         await addDoc(collection(db, 'chat'), {
             texto: texto.slice(0, 300),
             nick: usuarioAtualData.nick || 'Leitor',
@@ -3281,10 +3444,8 @@ window.enviarChat = async function() {
             createdAt: new Date()
         });
         input.value = '';
-        setTimeout(() => {
-            const box = document.getElementById('chatMensagens');
-            if (box) box.scrollTop = box.scrollHeight;
-        }, 150);
+        chatAtualizarContador();
+        setTimeout(() => chatIrParaFim(), 180);
     } catch (e) {
         console.error(e);
         if (err) {
@@ -3296,6 +3457,7 @@ window.enviarChat = async function() {
             input.disabled = false;
             input.focus();
         }
+        if (btn) btn.disabled = false;
     }
 };
 
